@@ -76,6 +76,8 @@ if 'show_account_type_modal' not in st.session_state:
     st.session_state.show_account_type_modal = False
 if 'process_confirm' not in st.session_state:
     st.session_state.process_confirm = False
+if 'cms_id_warning' not in st.session_state:
+    st.session_state.cms_id_warning = None
 
 def reset_app():
     st.session_state.uploader_key += 1
@@ -84,6 +86,7 @@ def reset_app():
     st.session_state.selected_type = None
     st.session_state.show_account_type_modal = False
     st.session_state.process_confirm = False
+    st.session_state.cms_id_warning = None
     st.rerun()
 
 # --- SIDEBAR NAVIGATION ---
@@ -163,6 +166,12 @@ if selected_tool == "VRP Mapper":
         df_master = pd.read_csv(src_file, dtype=str, keep_default_na=False)
         df_master.columns = df_master.columns.str.strip()
         
+        # --- Auto-detect the Trans/Details-only mapping file by name ---
+        TRANS_DETAILS_ONLY_FILENAME = "NEW VRP ACCOUNTS FOR TAG_PIF REVISIT- NO DL_JOREM"
+        uploaded_name_clean = re.sub(r'[\s_]+', ' ', os.path.splitext(src_file.name)[0].strip().upper())
+        target_name_clean = re.sub(r'[\s_]+', ' ', TRANS_DETAILS_ONLY_FILENAME.strip().upper())
+        force_trans_details = uploaded_name_clean.startswith(target_name_clean)
+        
         pasted_codes = st.text_area("Paste Reference Codes (Optional filter - one per line):", height=150)
         
         col1, col2 = st.columns([1, 1])
@@ -178,7 +187,13 @@ if selected_tool == "VRP Mapper":
             left, middle, right = st.columns([1, 2, 1])
             with middle:
                 st.markdown("<h3 style='text-align:center'>Select Type of Account</h3>", unsafe_allow_html=True)
-                selected_type = st.radio("", ["DL", "Trans/Details"], index=0)
+                if force_trans_details:
+                    st.caption("ℹ️ Recognized Trans/Details-only file — pre-selected below.")
+                selected_type = st.radio(
+                    "", ["DL", "Trans/Details"],
+                    index=1 if force_trans_details else 0,
+                    key=f"account_type_radio_{uploaded_name_clean}"
+                )
                 if st.button("Process Now", type="primary", use_container_width=True):
                     st.session_state.selected_type = selected_type
                     st.session_state.process_confirm = True
@@ -230,11 +245,26 @@ if selected_tool == "VRP Mapper":
             time.sleep(0.2)
 
             progress_bar.progress(60, text="Calculating constants and CMS IDs...")
-            if 'OB/PRINCIPAL' in df_src.columns:
-                df_out['outstanding_balance'] = pd.to_numeric(df_src['OB/PRINCIPAL'], errors='coerce').fillna(0)
             
+            # PIF HOME LOAN rows: OB/PRINCIPAL goes to amount_due (Y) instead of outstanding_balance
+            is_pif_homeloan = df_src['BANK'].astype(str).str.strip().str.upper().str.replace(' ', '', regex=False) == 'PIFHOMELOAN'
+            
+            if 'OB/PRINCIPAL' in df_src.columns:
+                ob_principal_val = pd.to_numeric(df_src['OB/PRINCIPAL'], errors='coerce').fillna(0)
+                df_out['outstanding_balance'] = ob_principal_val.mask(is_pif_homeloan, '')
+                if 'amount_due' in df_out.columns:
+                    df_out['amount_due'] = ob_principal_val.where(is_pif_homeloan, '')
+            
+            st.session_state.cms_id_warning = None
             if 'CH CODE' in df_src.columns:
                 df_out['cms_id'] = df_src['CH CODE'].str.strip().str.upper().map(cms_mapping).fillna('')
+                
+                blank_cms_pif_mask = is_pif_homeloan & (df_out['cms_id'] == '')
+                if blank_cms_pif_mask.any():
+                    st.session_state.cms_id_warning = {
+                        'count': int(blank_cms_pif_mask.sum()),
+                        'ch_codes': sorted(set(df_src.loc[blank_cms_pif_mask, 'CH CODE'].astype(str).str.strip()))
+                    }
 
             df_out['shared_or_exclusive'] = "SHARED"
             df_out['type_of_account'] = selected_type
@@ -318,6 +348,14 @@ if selected_tool == "VRP Mapper":
         _, center_box, _ = st.columns([1, 1, 1])
         with center_box:
             st.success(f"✅ Processed {total_accounts} accounts!")
+
+        if st.session_state.cms_id_warning:
+            warn_info = st.session_state.cms_id_warning
+            ch_codes_str = ", ".join(warn_info['ch_codes']) if warn_info['ch_codes'] else "N/A"
+            st.warning(
+                f"⚠️ {warn_info['count']} PIF HOME LOAN account(s) have a blank CMS ID. "
+                f"Affected CH CODE(s): {ch_codes_str}"
+            )
 
         st.write("### 📥 Download Processed Files")
         col_dl1, col_dl2 = st.columns(2)
