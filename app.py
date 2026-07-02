@@ -137,6 +137,33 @@ if selected_tool == "VRP Mapper":
 
     cms_mapping = load_cms_data()
 
+    # --- AMOUNTS REFERENCE LOADING ---
+    @st.cache_data
+    def load_amounts_data():
+        ref_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "amounts.csv")
+        if os.path.exists(ref_path):
+            try:
+                df_amt = pd.read_csv(ref_path, dtype=str)
+                df_amt.columns = df_amt.columns.str.strip()
+                
+                # Flexibly find ChCode, Amount OB, and Principal Amount Due columns
+                ch_col = next((c for c in df_amt.columns if c.upper().replace(" ", "") in ['CHCODE', 'CH_CODE']), None)
+                ob_col = next((c for c in df_amt.columns if 'OB' in c.upper()), None)
+                due_col = next((c for c in df_amt.columns if 'DUE' in c.upper()), None)
+                
+                if ch_col and ob_col and due_col:
+                    df_amt[ch_col] = df_amt[ch_col].str.strip().str.upper()
+                    
+                    # Create dictionary mappings for easy lookup
+                    ob_dict = dict(zip(df_amt[ch_col], df_amt[ob_col].str.strip()))
+                    due_dict = dict(zip(df_amt[ch_col], df_amt[due_col].str.strip()))
+                    return ob_dict, due_dict
+            except Exception:
+                pass
+        return {}, {}
+
+    amounts_ob_mapping, amounts_due_mapping = load_amounts_data()
+
     # --- FULL AREA CLUSTER REFERENCE MAPPING ---
     AREA_MAPPING = {
         'ABRA': 'NORTH LUZON', 'AURORA': 'NORTH LUZON', 'BATAAN': 'NORTH LUZON', 
@@ -249,25 +276,30 @@ if selected_tool == "VRP Mapper":
             
             time.sleep(0.2)
 
-            progress_bar.progress(60, text="Calculating constants and CMS IDs...")
+            progress_bar.progress(60, text="Calculating constants, amounts, and CMS IDs...")
             
-            # PIF HOME LOAN rows: OB/PRINCIPAL goes to amount_due (Y) instead of outstanding_balance
+            # PIF HOME LOAN flag for rule overrides
             is_pif_homeloan = df_src['BANK'].astype(str).str.strip().str.upper().str.replace(' ', '', regex=False) == 'PIFHOMELOAN'
             
-            if 'OB/PRINCIPAL' in df_src.columns:
-                ob_principal_val = pd.to_numeric(df_src['OB/PRINCIPAL'], errors='coerce').fillna(0)
-                
-                # --- UPDATE 1: Set outstanding_balance to '0' for PIF HOMELOAN instead of '' ---
-                df_out['outstanding_balance'] = ob_principal_val.mask(is_pif_homeloan, '0')
-                
-                if 'amount_due' in df_out.columns:
-                    df_out['amount_due'] = ob_principal_val.where(is_pif_homeloan, '')
-            
-            st.session_state.cms_id_warning = None
+            # --- MAP OUTSTANDING BALANCE AND AMOUNT DUE VIA CH CODE ---
             if 'CH CODE' in df_src.columns:
-                df_out['cms_id'] = df_src['CH CODE'].str.strip().str.upper().map(cms_mapping).fillna('')
+                ch_codes_clean = df_src['CH CODE'].astype(str).str.strip().str.upper()
                 
-                # --- UPDATE 2: Halt process if ANY CMS ID is blank and show a warning ---
+                # Fetch amounts from amounts.csv via mapping dictionary
+                mapped_ob = ch_codes_clean.map(amounts_ob_mapping).fillna('')
+                mapped_due = ch_codes_clean.map(amounts_due_mapping).fillna('')
+                
+                df_out['outstanding_balance'] = mapped_ob
+                if 'amount_due' in df_out.columns:
+                    df_out['amount_due'] = mapped_due
+                    
+                # Continue enforcing rule: Set outstanding_balance to '0' for PIF HOMELOAN
+                df_out['outstanding_balance'] = df_out['outstanding_balance'].mask(is_pif_homeloan, '0')
+                
+                # --- CMS ID Mapping ---
+                df_out['cms_id'] = ch_codes_clean.map(cms_mapping).fillna('')
+                
+                # Halt process if ANY CMS ID is blank and show a warning
                 blank_cms_mask = df_out['cms_id'] == ''
                 if blank_cms_mask.any():
                     # Get the missing CH CODES to tell the user what to fix
