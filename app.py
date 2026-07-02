@@ -137,7 +137,7 @@ if selected_tool == "VRP Mapper":
 
     cms_mapping = load_cms_data()
 
-    # --- AMOUNTS REFERENCE LOADING ---
+    # --- AMOUNTS REFERENCE LOADING (Optional - mainly for PIF HOMELOAN) ---
     @st.cache_data
     def load_amounts_data():
         ref_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "amounts.csv")
@@ -278,11 +278,17 @@ if selected_tool == "VRP Mapper":
 
             progress_bar.progress(60, text="Calculating constants, amounts, and CMS IDs...")
             
+            # --- Check if this is a PIF HOMELOAN file ---
+            is_pif_homeloan = False
+            if not df_src.empty and 'BANK' in df_src.columns:
+                unique_banks = df_src['BANK'].astype(str).str.strip().str.upper().replace({'NAN': ''}).unique()
+                is_pif_homeloan = any('PIF HOMELOAN' in bank for bank in unique_banks)
+            
             # --- MAP OUTSTANDING BALANCE AND AMOUNT DUE VIA CH CODE ---
             if 'CH CODE' in df_src.columns:
                 ch_codes_clean = df_src['CH CODE'].astype(str).str.strip().str.upper()
                 
-                # Fetch amounts from amounts.csv via mapping dictionary
+                # Fetch amounts from amounts.csv via mapping dictionary (will be empty for non-PIF accounts)
                 mapped_ob = ch_codes_clean.map(amounts_ob_mapping).fillna('')
                 mapped_due = ch_codes_clean.map(amounts_due_mapping).fillna('')
                 
@@ -290,26 +296,43 @@ if selected_tool == "VRP Mapper":
                 if 'amount_due' in df_out.columns:
                     df_out['amount_due'] = mapped_due
                 
+                # Show a note if amounts are missing for PIF HOMELOAN accounts
+                if is_pif_homeloan:
+                    blank_ob_mask = df_out['outstanding_balance'] == ''
+                    if blank_ob_mask.any():
+                        missing_ch = sorted(set(df_src.loc[blank_ob_mask, 'CH CODE'].astype(str).str.strip()))
+                        st.warning(
+                            f"⚠️ **NOTICE:** {blank_ob_mask.sum()} PIF HOMELOAN account(s) have missing amounts.\n\n"
+                            f"**Missing CH CODE(s):** {', '.join(missing_ch)}\n\n"
+                            f"Please check your 'amounts.csv' reference file if amounts are needed."
+                        )
+                
                 # --- CMS ID Mapping ---
                 df_out['cms_id'] = ch_codes_clean.map(cms_mapping).fillna('')
                 
-                # Halt process if ANY CMS ID is blank and show a warning
+                # Halt process only for PIF HOMELOAN if CMS ID is blank
                 blank_cms_mask = df_out['cms_id'] == ''
                 if blank_cms_mask.any():
-                    # Get the missing CH CODES to tell the user what to fix
                     missing_ch_codes = sorted(set(df_src.loc[blank_cms_mask, 'CH CODE'].astype(str).str.strip()))
                     
-                    # Clear the progress bar and reset the processing state
-                    progress_bar.empty()
-                    st.session_state.process_confirm = False
-                    
-                    # Display the pop-up error and completely halt the script
-                    st.error(
-                        f"🚨 **PROCESS HALTED:** Found {blank_cms_mask.sum()} row(s) with a blank CMS ID.\n\n"
-                        f"**Missing CH CODE(s):** {', '.join(missing_ch_codes)}\n\n"
-                        f"Please update your 'cmd_id.xlsx' reference file and try again."
-                    )
-                    st.stop()
+                    if is_pif_homeloan:
+                        # For PIF HOMELOAN, CMS ID is critical - halt processing
+                        progress_bar.empty()
+                        st.session_state.process_confirm = False
+                        
+                        st.error(
+                            f"🚨 **PROCESS HALTED:** Found {blank_cms_mask.sum()} PIF HOMELOAN row(s) with a blank CMS ID.\n\n"
+                            f"**Missing CH CODE(s):** {', '.join(missing_ch_codes)}\n\n"
+                            f"Please update your 'cmd_id.xlsx' reference file and try again."
+                        )
+                        st.stop()
+                    else:
+                        # For non-PIF accounts, just show a warning but continue
+                        st.warning(
+                            f"⚠️ **NOTICE:** {blank_cms_mask.sum()} row(s) have blank CMS IDs.\n\n"
+                            f"**Missing CH CODE(s):** {', '.join(missing_ch_codes)}\n\n"
+                            f"Processing continues. Update 'cmd_id.xlsx' if CMS IDs are needed for these accounts."
+                        )
 
             df_out['shared_or_exclusive'] = "SHARED"
             df_out['type_of_account'] = selected_type
@@ -493,7 +516,7 @@ elif selected_tool == "Field Result":
                 for r_idx, row_values in enumerate(df_target.values):
                     for c_idx, cell_value in enumerate(row_values):
                         
-                        # --- UPDATED: FORMAT SET TO mm/dd/yyyy ---
+                        # --- FORMAT SET TO mm/dd/yyyy ---
                         if isinstance(cell_value, (date, datetime)):
                             formatted_text_value = cell_value.strftime('%m/%d/%Y')
                         else:
