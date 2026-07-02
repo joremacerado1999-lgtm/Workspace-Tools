@@ -81,6 +81,13 @@ if 'process_confirm' not in st.session_state:
     st.session_state.process_confirm = False
 if 'cms_id_warning' not in st.session_state:
     st.session_state.cms_id_warning = None
+# Field Result session state
+if 'field_result_buffer' not in st.session_state:
+    st.session_state.field_result_buffer = None
+if 'field_result_filename' not in st.session_state:
+    st.session_state.field_result_filename = ""
+if 'field_result_processed' not in st.session_state:
+    st.session_state.field_result_processed = False
 
 def reset_app():
     st.session_state.uploader_key += 1
@@ -479,9 +486,11 @@ elif selected_tool == "Field Result":
     st.title("📊 Field Result Column Extractor")
     st.write("Upload an Excel workbook containing a sheet named **'RESULT'** to run the macro extraction.")
     
-    excel_file = st.file_uploader("Upload Workbook (.xlsx)", type=['xlsx'])
+    # Reset field result state when switching tools or uploading new file
+    excel_file = st.file_uploader("Upload Workbook (.xlsx)", type=['xlsx'], key="field_result_uploader")
     
-    if excel_file:
+    # Process button
+    if excel_file and st.button("🔄 Process Field Result", use_container_width=True):
         try:
             progress_bar = st.progress(0, text="Reading Excel file...")
             
@@ -492,6 +501,7 @@ elif selected_tool == "Field Result":
             if not target_sheet:
                 progress_bar.empty()
                 st.error("❌ Error: A sheet named 'RESULT' was not found in this workbook.")
+                st.session_state.field_result_processed = False
             else:
                 progress_bar.progress(25, text="Extracting relevant columns...")
                 time.sleep(0.2)
@@ -566,30 +576,40 @@ elif selected_tool == "Field Result":
                 wb_out.save(output_buffer)
                 output_buffer.seek(0)
                 
+                # Store in session state for persistent download
+                st.session_state.field_result_buffer = output_buffer
+                st.session_state.field_result_filename = generated_fn
+                st.session_state.field_result_processed = True
+                
                 progress_bar.progress(100, text="Process Complete!")
                 time.sleep(0.3)
                 progress_bar.empty()
                 
                 st.success("✅ Extraction and formatting (mm/dd/yyyy) successful!")
                 
-                st.download_button(
-                    label=f"📥 Download Extracted File ({generated_fn})",
-                    data=output_buffer,
-                    file_name=generated_fn,
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    use_container_width=True
-                )
-                
-                st.divider()
-                st.subheader("📋 Extracted Data Preview")
-                
+                # Show preview immediately
                 preview_df = df_target.copy()
                 preview_df.columns = preview_df.iloc[0]
                 preview_df = preview_df.drop(preview_df.index[0]).reset_index(drop=True)
+                
+                st.divider()
+                st.subheader("📋 Extracted Data Preview")
                 st.dataframe(preview_df.head(15))
                 
         except Exception as e:
             st.error(f"❌ Error processing file: {str(e)}")
+            st.session_state.field_result_processed = False
+    
+    # Show download button if processing was successful (persists after rerun)
+    if st.session_state.field_result_processed and st.session_state.field_result_buffer is not None:
+        st.download_button(
+            label=f"📥 Download Extracted File ({st.session_state.field_result_filename})",
+            data=st.session_state.field_result_buffer,
+            file_name=st.session_state.field_result_filename,
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True,
+            key="field_result_download"
+        )
 
 
 # ==========================================
