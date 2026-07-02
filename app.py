@@ -154,9 +154,9 @@ if selected_tool == "VRP Mapper":
                 if ch_col and ob_col and due_col:
                     df_amt[ch_col] = df_amt[ch_col].str.strip().str.upper()
                     
-                    # Create dictionary mappings for easy lookup
-                    ob_dict = dict(zip(df_amt[ch_col], df_amt[ob_col].str.strip()))
-                    due_dict = dict(zip(df_amt[ch_col], df_amt[due_col].str.strip()))
+                    # Create dictionary mappings for easy lookup (general format, no thousands commas)
+                    ob_dict = dict(zip(df_amt[ch_col], df_amt[ob_col].str.strip().str.replace(',', '', regex=False)))
+                    due_dict = dict(zip(df_amt[ch_col], df_amt[due_col].str.strip().str.replace(',', '', regex=False)))
                     return ob_dict, due_dict
             except Exception:
                 pass
