@@ -297,14 +297,33 @@ if selected_tool == "VRP Mapper":
                     break
             
             if ob_column_found:
-                # Get OB/PRINCIPAL directly from the uploaded file (general format, remove commas)
-                df_out['outstanding_balance'] = (
-                    df_src[ob_column_found]
-                    .astype(str)
-                    .str.strip()
-                    .str.replace(',', '', regex=False)
-                    .replace(['nan', 'None', ''], '0')
-                )
+                # Convert to string first to avoid scientific notation issues
+                outstanding_values = df_src[ob_column_found].astype(str).str.strip()
+                
+                # Remove commas and any whitespace
+                outstanding_values = outstanding_values.str.replace(',', '', regex=False)
+                
+                # Convert to float first to handle scientific notation, then format as general number
+                def format_general_number(val):
+                    if val in ['nan', 'None', '', '0', '0.0']:
+                        return '0'
+                    try:
+                        # Convert to float (handles scientific notation like 5.03478391e+06)
+                        num = float(val)
+                        # If it's a whole number, don't show decimals
+                        if num == int(num):
+                            return str(int(num))
+                        else:
+                            # Format with 2 decimal places, but remove trailing zeros
+                            formatted = f"{num:.2f}"
+                            # Remove trailing zeros after decimal
+                            formatted = formatted.rstrip('0').rstrip('.') if '.' in formatted else formatted
+                            return formatted
+                    except ValueError:
+                        return val
+                
+                df_out['outstanding_balance'] = outstanding_values.apply(format_general_number)
+                
             elif 'CH CODE' in df_src.columns:
                 # Fallback to amounts.csv mapping if no OB/PRINCIPAL column in uploaded file
                 ch_codes_clean = df_src['CH CODE'].astype(str).str.strip().str.upper()
