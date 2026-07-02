@@ -284,39 +284,52 @@ if selected_tool == "VRP Mapper":
                 unique_banks = df_src['BANK'].astype(str).str.strip().str.upper().replace({'NAN': ''}).unique()
                 is_pif_homeloan = any('PIF HOMELOAN' in bank for bank in unique_banks)
             
-            # --- MAP OUTSTANDING BALANCE AND AMOUNT DUE VIA CH CODE ---
+            # --- MAP OUTSTANDING BALANCE ---
+            # First, try to get OB/PRINCIPAL directly from the uploaded file
+            ob_column_found = None
+            for col in df_src.columns:
+                col_upper = col.upper().strip()
+                if 'OB' in col_upper and 'PRINCIPAL' in col_upper:
+                    ob_column_found = col
+                    break
+                elif col_upper == 'OB/PRINCIPAL':
+                    ob_column_found = col
+                    break
+            
+            if ob_column_found:
+                # Get OB/PRINCIPAL directly from the uploaded file (general format, remove commas)
+                df_out['outstanding_balance'] = (
+                    df_src[ob_column_found]
+                    .astype(str)
+                    .str.strip()
+                    .str.replace(',', '', regex=False)
+                    .replace(['nan', 'None', ''], '0')
+                )
+            elif 'CH CODE' in df_src.columns:
+                # Fallback to amounts.csv mapping if no OB/PRINCIPAL column in uploaded file
+                ch_codes_clean = df_src['CH CODE'].astype(str).str.strip().str.upper()
+                df_out['outstanding_balance'] = ch_codes_clean.map(amounts_ob_mapping).fillna('0')
+            else:
+                df_out['outstanding_balance'] = '0'
+            
+            # --- MAP AMOUNT DUE ---
             if 'CH CODE' in df_src.columns:
                 ch_codes_clean = df_src['CH CODE'].astype(str).str.strip().str.upper()
                 
-                # Fetch amounts from amounts.csv via mapping dictionary (will be empty for non-PIF accounts)
-                mapped_ob = ch_codes_clean.map(amounts_ob_mapping).fillna('')
-                mapped_due = ch_codes_clean.map(amounts_due_mapping).fillna('')
+                # Fetch amount due from amounts.csv mapping dictionary
+                mapped_due = ch_codes_clean.map(amounts_due_mapping).fillna('0')
                 
-                df_out['outstanding_balance'] = mapped_ob
                 if 'amount_due' in df_out.columns:
                     df_out['amount_due'] = mapped_due
-                
-                # Show a note if amounts are missing for PIF HOMELOAN accounts
-                if is_pif_homeloan:
-                    blank_ob_mask = df_out['outstanding_balance'] == ''
-                    if blank_ob_mask.any():
-                        missing_ch = sorted(set(df_src.loc[blank_ob_mask, 'CH CODE'].astype(str).str.strip()))
-                        st.warning(
-                            f"⚠️ **NOTICE:** {blank_ob_mask.sum()} PIF HOMELOAN account(s) have missing amounts.\n\n"
-                            f"**Missing CH CODE(s):** {', '.join(missing_ch)}\n\n"
-                            f"Please check your 'amounts.csv' reference file if amounts are needed."
-                        )
                 
                 # --- CMS ID Mapping ---
                 df_out['cms_id'] = ch_codes_clean.map(cms_mapping).fillna('')
                 
-                # Halt process only for PIF HOMELOAN if CMS ID is blank
-                blank_cms_mask = df_out['cms_id'] == ''
-                if blank_cms_mask.any():
-                    missing_ch_codes = sorted(set(df_src.loc[blank_cms_mask, 'CH CODE'].astype(str).str.strip()))
-                    
-                    if is_pif_homeloan:
-                        # For PIF HOMELOAN, CMS ID is critical - halt processing
+                # Only halt for PIF HOMELOAN if CMS ID is blank
+                if is_pif_homeloan:
+                    blank_cms_mask = df_out['cms_id'] == ''
+                    if blank_cms_mask.any():
+                        missing_ch_codes = sorted(set(df_src.loc[blank_cms_mask, 'CH CODE'].astype(str).str.strip()))
                         progress_bar.empty()
                         st.session_state.process_confirm = False
                         
@@ -326,13 +339,6 @@ if selected_tool == "VRP Mapper":
                             f"Please update your 'cmd_id.xlsx' reference file and try again."
                         )
                         st.stop()
-                    else:
-                        # For non-PIF accounts, just show a warning but continue
-                        st.warning(
-                            f"⚠️ **NOTICE:** {blank_cms_mask.sum()} row(s) have blank CMS IDs.\n\n"
-                            f"**Missing CH CODE(s):** {', '.join(missing_ch_codes)}\n\n"
-                            f"Processing continues. Update 'cmd_id.xlsx' if CMS IDs are needed for these accounts."
-                        )
 
             df_out['shared_or_exclusive'] = "SHARED"
             df_out['type_of_account'] = selected_type
