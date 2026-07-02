@@ -146,10 +146,10 @@ if selected_tool == "VRP Mapper":
                 df_amt = pd.read_csv(ref_path, dtype=str)
                 df_amt.columns = df_amt.columns.str.strip()
                 
-                # Flexibly find ChCode, Amount OB, and Principal Amount Due columns
+                # Find ChCode, Amount OB, and Principal Amount Due columns by exact name
                 ch_col = next((c for c in df_amt.columns if c.upper().replace(" ", "") in ['CHCODE', 'CH_CODE']), None)
-                ob_col = next((c for c in df_amt.columns if 'OB' in c.upper()), None)
-                due_col = next((c for c in df_amt.columns if 'DUE' in c.upper()), None)
+                ob_col = next((c for c in df_amt.columns if c.strip().upper() == 'AMOUNT OB'), None)
+                due_col = next((c for c in df_amt.columns if c.strip().upper() == 'PRINCIPAL AMOUNT DUE'), None)
                 
                 if ch_col and ob_col and due_col:
                     df_amt[ch_col] = df_amt[ch_col].str.strip().str.upper()
@@ -278,9 +278,6 @@ if selected_tool == "VRP Mapper":
 
             progress_bar.progress(60, text="Calculating constants, amounts, and CMS IDs...")
             
-            # PIF HOME LOAN flag for rule overrides
-            is_pif_homeloan = df_src['BANK'].astype(str).str.strip().str.upper().str.replace(' ', '', regex=False) == 'PIFHOMELOAN'
-            
             # --- MAP OUTSTANDING BALANCE AND AMOUNT DUE VIA CH CODE ---
             if 'CH CODE' in df_src.columns:
                 ch_codes_clean = df_src['CH CODE'].astype(str).str.strip().str.upper()
@@ -292,9 +289,6 @@ if selected_tool == "VRP Mapper":
                 df_out['outstanding_balance'] = mapped_ob
                 if 'amount_due' in df_out.columns:
                     df_out['amount_due'] = mapped_due
-                    
-                # Continue enforcing rule: Set outstanding_balance to '0' for PIF HOMELOAN
-                df_out['outstanding_balance'] = df_out['outstanding_balance'].mask(is_pif_homeloan, '0')
                 
                 # --- CMS ID Mapping ---
                 df_out['cms_id'] = ch_codes_clean.map(cms_mapping).fillna('')
