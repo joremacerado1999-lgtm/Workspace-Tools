@@ -34,18 +34,21 @@ st.markdown(
 
     /* 2. Hover State: Lifts the button, adds a shadow, and triggers the animation */
     .stButton > button:hover, .stDownloadButton > button:hover {
-        transform: translateY(-4px); 
+        transform: translateY(-4px);
         box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2) !important; 
-        border-color: #2e7d32 !important; /* Subtle green border match */
+        border-color: #2e7d32 !important;
+        /* Subtle green border match */
         animation: gentle-pulse 1.5s infinite ease-in-out; 
-        z-index: 1; /* Ensures the glowing button pops above other elements */
+        z-index: 1;
+        /* Ensures the glowing button pops above other elements */
     }
 
     /* 3. Click/Active State: Pushes the button down when clicked */
     .stButton > button:active, .stDownloadButton > button:active {
         transform: translateY(2px) scale(0.98) !important;
         box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1) !important;
-        animation: none; /* Stops the pulse while clicking */
+        animation: none;
+        /* Stops the pulse while clicking */
     }
 
     /* 4. The Keyframes for the continuous pulsing effect while hovering */
@@ -170,6 +173,7 @@ if selected_tool == "VRP Mapper":
         TRANS_DETAILS_ONLY_FILENAME = "NEW VRP ACCOUNTS FOR TAG_PIF REVISIT- NO DL_JOREM"
         uploaded_name_clean = re.sub(r'[\s_]+', ' ', os.path.splitext(src_file.name)[0].strip().upper())
         target_name_clean = re.sub(r'[\s_]+', ' ', TRANS_DETAILS_ONLY_FILENAME.strip().upper())
+    
         force_trans_details = uploaded_name_clean.startswith(target_name_clean)
         
         pasted_codes = st.text_area("Paste Reference Codes (Optional filter - one per line):", height=150)
@@ -242,6 +246,7 @@ if selected_tool == "VRP Mapper":
                         )
                     else:
                         df_out[target_col] = df_src[src_col]
+            
             time.sleep(0.2)
 
             progress_bar.progress(60, text="Calculating constants and CMS IDs...")
@@ -251,7 +256,10 @@ if selected_tool == "VRP Mapper":
             
             if 'OB/PRINCIPAL' in df_src.columns:
                 ob_principal_val = pd.to_numeric(df_src['OB/PRINCIPAL'], errors='coerce').fillna(0)
-                df_out['outstanding_balance'] = ob_principal_val.mask(is_pif_homeloan, '')
+                
+                # --- UPDATE 1: Set outstanding_balance to '0' for PIF HOMELOAN instead of '' ---
+                df_out['outstanding_balance'] = ob_principal_val.mask(is_pif_homeloan, '0')
+                
                 if 'amount_due' in df_out.columns:
                     df_out['amount_due'] = ob_principal_val.where(is_pif_homeloan, '')
             
@@ -259,12 +267,23 @@ if selected_tool == "VRP Mapper":
             if 'CH CODE' in df_src.columns:
                 df_out['cms_id'] = df_src['CH CODE'].str.strip().str.upper().map(cms_mapping).fillna('')
                 
-                blank_cms_pif_mask = is_pif_homeloan & (df_out['cms_id'] == '')
-                if blank_cms_pif_mask.any():
-                    st.session_state.cms_id_warning = {
-                        'count': int(blank_cms_pif_mask.sum()),
-                        'ch_codes': sorted(set(df_src.loc[blank_cms_pif_mask, 'CH CODE'].astype(str).str.strip()))
-                    }
+                # --- UPDATE 2: Halt process if ANY CMS ID is blank and show a warning ---
+                blank_cms_mask = df_out['cms_id'] == ''
+                if blank_cms_mask.any():
+                    # Get the missing CH CODES to tell the user what to fix
+                    missing_ch_codes = sorted(set(df_src.loc[blank_cms_mask, 'CH CODE'].astype(str).str.strip()))
+                    
+                    # Clear the progress bar and reset the processing state
+                    progress_bar.empty()
+                    st.session_state.process_confirm = False
+                    
+                    # Display the pop-up error and completely halt the script
+                    st.error(
+                        f"🚨 **PROCESS HALTED:** Found {blank_cms_mask.sum()} row(s) with a blank CMS ID.\n\n"
+                        f"**Missing CH CODE(s):** {', '.join(missing_ch_codes)}\n\n"
+                        f"Please update your 'cmd_id.xlsx' reference file and try again."
+                    )
+                    st.stop()
 
             df_out['shared_or_exclusive'] = "SHARED"
             df_out['type_of_account'] = selected_type
@@ -348,14 +367,6 @@ if selected_tool == "VRP Mapper":
         _, center_box, _ = st.columns([1, 1, 1])
         with center_box:
             st.success(f"✅ Processed {total_accounts} accounts!")
-
-        if st.session_state.cms_id_warning:
-            warn_info = st.session_state.cms_id_warning
-            ch_codes_str = ", ".join(warn_info['ch_codes']) if warn_info['ch_codes'] else "N/A"
-            st.warning(
-                f"⚠️ {warn_info['count']} PIF HOME LOAN account(s) have a blank CMS ID. "
-                f"Affected CH CODE(s): {ch_codes_str}"
-            )
 
         st.write("### 📥 Download Processed Files")
         col_dl1, col_dl2 = st.columns(2)
