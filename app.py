@@ -75,59 +75,100 @@ st.markdown(
         transform: translateY(0px) scale(0.98);
         box-shadow: 0 2px 6px rgba(0,0,0,0.1);
     }
+    /* ----- Progress Bar ----- */
+    .stProgress {
+        background: #e0e0e0 !important;
+        border-radius: 20px !important;
+        overflow: hidden !important;
+        height: 24px !important;
+    }
     .stProgress > div > div {
+        background: #2e7d32 !important;
+        border-radius: 20px !important;
+        height: 100% !important;
+        transition: width 0.3s ease;
+    }
+    .stProgress .stProgressText {
+        color: #1e2a3a !important;
+        font-weight: 600 !important;
+        font-size: 0.9rem !important;
+        line-height: 24px !important;
+        text-shadow: 0 1px 2px rgba(255,255,255,0.3);
+    }
+    /* Dark theme overrides */
+    [data-theme="dark"] .stProgress {
+        background: #424242 !important;
+    }
+    [data-theme="dark"] .stProgress > div > div {
+        background: #4caf50 !important;
+    }
+    [data-theme="dark"] .stProgress .stProgressText {
+        color: #ffffff !important;
+        text-shadow: 0 1px 4px rgba(0,0,0,0.5);
+    }
+    [data-theme="dark"] .stButton > button, 
+    [data-theme="dark"] .stDownloadButton > button {
+        background: #2d2d2d;
+        border-color: #555;
+        color: #eee;
+    }
+    [data-theme="dark"] .stButton > button:hover,
+    [data-theme="dark"] .stDownloadButton > button:hover {
         background: #2e7d32;
-        border-radius: 20px;
-    }
-    .stAlert {
-        border-radius: 12px;
-        border-left: 6px solid;
-    }
-    .stSuccess {
-        background: #e8f5e9;
+        color: white;
         border-color: #2e7d32;
     }
-    .stError {
-        background: #ffebee;
+    [data-theme="dark"] .stAlert {
+        background: #1e2a3a;
+        color: #eee;
+    }
+    [data-theme="dark"] .stSuccess {
+        background: #1b3a1b;
+        border-color: #4caf50;
+        color: #c8e6c9;
+    }
+    [data-theme="dark"] .stError {
+        background: #3a1b1b;
         border-color: #c62828;
+        color: #ffcdd2;
     }
-    .stWarning {
-        background: #fff8e1;
+    [data-theme="dark"] .stWarning {
+        background: #3a2e1b;
         border-color: #f9a825;
+        color: #fff9c4;
     }
-    .stInfo {
-        background: #e3f2fd;
+    [data-theme="dark"] .stInfo {
+        background: #1b2a3a;
         border-color: #1565c0;
+        color: #bbdefb;
     }
-    .stExpander {
-        border: 1px solid #e0e7ef;
-        border-radius: 12px;
-        background: white;
+    [data-theme="dark"] .stExpander {
+        background: #2d2d2d;
+        border-color: #444;
     }
-    .stDataFrame {
-        border-radius: 12px;
-        overflow: hidden;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+    [data-theme="dark"] .stDataFrame {
+        background: #1e1e1e;
+        color: #ddd;
     }
-    .stDownloadButton > button, .stButton > button {
-        width: 100%;
+    [data-theme="dark"] .stTextArea textarea {
+        background: #2d2d2d;
+        border-color: #555;
+        color: #eee;
     }
-    .stTextArea textarea {
-        border-radius: 12px;
-        border: 1px solid #d0d9e8;
-        background: white;
+    [data-theme="dark"] .stFileUploader > div {
+        background: #2d2d2d;
+        border-color: #555;
     }
-    .stFileUploader > div {
-        border: 2px dashed #b0bec5;
-        border-radius: 16px;
-        background: #f8faff;
-        padding: 1.5rem;
+    [data-theme="dark"] .card {
+        background: #1e1e1e;
+        border-color: #333;
+        box-shadow: 0 6px 24px rgba(0,0,0,0.3);
     }
-    .stFileUploader > div:hover {
-        border-color: #2e7d32;
-        background: #f1f8e9;
+    [data-theme="dark"] .stSidebar {
+        background: #1e1e1edd;
+        border-right: 1px solid #333;
     }
-    /* Card containers */
+    /* Card containers (light) */
     .card {
         background: white;
         border-radius: 20px;
@@ -142,14 +183,6 @@ st.markdown(
         margin: 0 auto;
         text-align: center;
     }
-    /* Notification toast */
-    .stToast {
-        background: #1e2a3a !important;
-        color: white !important;
-        border-radius: 16px !important;
-        box-shadow: 0 8px 30px rgba(0,0,0,0.2) !important;
-        font-weight: 500 !important;
-    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -158,10 +191,6 @@ st.markdown(
 # ----- Sound notification helper -----
 def play_completion_sound():
     """Inject HTML/JS to play a short chime sound."""
-    # Base64 of a simple beep (you can replace with your own)
-    sound_b64 = "data:audio/wav;base64,UklGRlQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YWEAAABhZGZ0AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
-    # This is a minimal WAV beep (silence) - we'll use a small audio element with a generated beep using Web Audio API for better reliability.
-    # We'll use JS to generate a simple beep tone.
     html = f"""
     <audio id="completion-sound" style="display:none;"></audio>
     <script>
@@ -171,7 +200,7 @@ def play_completion_sound():
         var gainNode = audioCtx.createGain();
         oscillator.connect(gainNode);
         gainNode.connect(audioCtx.destination);
-        oscillator.frequency.value = 880; // A5
+        oscillator.frequency.value = 880;
         oscillator.type = 'sine';
         gainNode.gain.value = 0.3;
         oscillator.start();
@@ -539,7 +568,6 @@ if selected_tool == "VRP Mapper":
             progress_bar.progress(100, text="Done!")
             elapsed = time.time() - start_time
             progress_bar.empty()
-            # Show success with elapsed time and play sound
             st.success(f"✅ Processed {total_accounts} accounts in {elapsed:.2f} seconds.")
             play_completion_sound()
 
@@ -688,7 +716,6 @@ elif selected_tool == "Field Result":
                 st.success(f"✅ Extraction and formatting (mm/dd/yyyy) successful! (Elapsed: {elapsed:.2f}s)")
                 play_completion_sound()
 
-                # Preview
                 preview_df = df_target.copy()
                 preview_df.columns = preview_df.iloc[0]
                 preview_df = preview_df.drop(preview_df.index[0]).reset_index(drop=True)
