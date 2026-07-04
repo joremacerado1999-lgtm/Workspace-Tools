@@ -76,7 +76,61 @@ st.markdown(
         box-shadow: 0 2px 6px rgba(0,0,0,0.1);
     }
 
+    /* ----- Dropdown (Selectbox) & Text Area visibility ----- */
+    .stSelectbox div[data-baseweb="select"] {
+        background-color: #ffffff !important;
+        border-radius: 12px;
+        border: 1px solid #d0d9e8;
+    }
+    .stSelectbox div[data-baseweb="select"] > div {
+        background-color: #ffffff !important;
+        color: #1e2a3a !important;
+    }
+    .stSelectbox ul {
+        background-color: #ffffff !important;
+    }
+    .stSelectbox li {
+        color: #1e2a3a !important;
+    }
+    .stTextArea textarea {
+        background-color: #ffffff !important;
+        color: #1e2a3a !important;
+        border-radius: 12px;
+        border: 1px solid #d0d9e8;
+    }
+    .stTextArea textarea:focus {
+        border-color: #2e7d32;
+        box-shadow: 0 0 0 2px rgba(46, 125, 50, 0.2);
+    }
+
     /* Dark theme overrides */
+    [data-theme="dark"] .stSelectbox div[data-baseweb="select"] {
+        background-color: #2d2d2d !important;
+        border-color: #555;
+    }
+    [data-theme="dark"] .stSelectbox div[data-baseweb="select"] > div {
+        background-color: #2d2d2d !important;
+        color: #eee !important;
+    }
+    [data-theme="dark"] .stSelectbox ul {
+        background-color: #2d2d2d !important;
+    }
+    [data-theme="dark"] .stSelectbox li {
+        color: #eee !important;
+    }
+    [data-theme="dark"] .stSelectbox li:hover {
+        background-color: #3d3d3d !important;
+    }
+    [data-theme="dark"] .stTextArea textarea {
+        background-color: #2d2d2d !important;
+        color: #eee !important;
+        border-color: #555;
+    }
+    [data-theme="dark"] .stTextArea textarea:focus {
+        border-color: #4caf50;
+        box-shadow: 0 0 0 2px rgba(76, 175, 80, 0.3);
+    }
+
     [data-theme="dark"] .stButton > button,
     [data-theme="dark"] .stDownloadButton > button {
         background: #2d2d2d;
@@ -120,11 +174,6 @@ st.markdown(
     [data-theme="dark"] .stDataFrame {
         background: #1e1e1e;
         color: #ddd;
-    }
-    [data-theme="dark"] .stTextArea textarea {
-        background: #2d2d2d;
-        border-color: #555;
-        color: #eee;
     }
     [data-theme="dark"] .stFileUploader > div {
         background: #2d2d2d;
@@ -630,19 +679,32 @@ if selected_tool == "VRP Mapper":
         st.session_state.processed_data = df_out
 
         # --- RELEASE FILE ---
-        # Find reference code column again for release file
+        # Find reference code column for REF CODE
         ref_col_release = None
         for col in df_src.columns:
             col_clean = col.strip().upper().replace(" ", "").replace("_", "")
             if col_clean in ['REFCODE', 'REFERENCECODE', 'REFCODE']:
                 ref_col_release = col
                 break
+
+        # For OTS, look for "TAG FM" column for RELEASED TO
+        released_to_col = None
+        if version == "OTS":
+            for col in df_src.columns:
+                col_clean = col.strip().upper().replace(" ", "").replace("_", "")
+                if col_clean == 'TAGFM':
+                    released_to_col = col
+                    break
+
         df_rel = pd.DataFrame()
         if ref_col_release:
             df_rel['REF CODE'] = df_src[ref_col_release]
         else:
             df_rel['REF CODE'] = ""
-        df_rel['RELEASED TO'] = ""  # placeholder
+        if released_to_col:
+            df_rel['RELEASED TO'] = df_src[released_to_col]
+        else:
+            df_rel['RELEASED TO'] = ""  # placeholder for other versions
         st.session_state.release_data = df_rel
 
         progress_bar.progress(100, text="Done!")
