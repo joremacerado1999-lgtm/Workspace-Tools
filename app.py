@@ -245,7 +245,7 @@ if selected_tool == "VRP Mapper":
         st.stop()
     df_tmp = pd.read_csv(template_filename, dtype=str)
 
-    # --- CMS ID REFERENCE LOADING (always load) ---
+    # --- CMS ID REFERENCE LOADING ---
     @st.cache_data
     def load_cms_data():
         ref_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cmd_id.xlsx")
@@ -285,7 +285,7 @@ if selected_tool == "VRP Mapper":
 
     amounts_ob_mapping, amounts_due_mapping = load_amounts_data()
 
-    # --- AREA CLUSTER MAPPING (same as before) ---
+    # --- AREA CLUSTER MAPPING ---
     AREA_MAPPING = {
         'ABRA': 'NORTH LUZON', 'AURORA': 'NORTH LUZON', 'BATAAN': 'NORTH LUZON',
         'BENGUET': 'NORTH LUZON', 'BULACAN': 'NORTH LUZON', 'CAGAYAN': 'NORTH LUZON',
@@ -360,16 +360,13 @@ if selected_tool == "VRP Mapper":
                 df_list.append(df_temp)
             df_master = pd.concat(df_list, ignore_index=True)
             is_multiple = True
-            # For MC2, we'll later set type_of_account based on _FILE_ASSIGNED_TYPE
         else:
             # FCL or OTS – single Excel file
             if src_files is None:
                 st.warning("Please upload an Excel file.")
                 st.stop()
-            # src_files is a single file (not list) when accept_multiple_files=False
             df_master = pd.read_excel(src_files, dtype=str, keep_default_na=False)
             df_master.columns = df_master.columns.str.strip()
-            # No auto-assign; we'll set type_of_account and visit_type later
             is_multiple = False
 
         start_time = time.time()
@@ -380,10 +377,11 @@ if selected_tool == "VRP Mapper":
         progress_bar.progress(15, text="Filtering target codes...")
         if pasted_codes.strip():
             codes_list = [c.strip() for c in pasted_codes.replace(',', '\n').split('\n') if c.strip()]
-            # The column name for reference code might be "REF CODE" or "REFERENCE CODE"
+            # Find reference code column
             ref_col = None
             for col in df_master.columns:
-                if col.upper().replace(" ", "") in ['REFCODE', 'REFERENCE CODE', 'REF CODE']:
+                col_clean = col.strip().upper().replace(" ", "").replace("_", "")
+                if col_clean in ['REFCODE', 'REFERENCECODE', 'REFCODE']:
                     ref_col = col
                     break
             if ref_col:
@@ -398,120 +396,117 @@ if selected_tool == "VRP Mapper":
         df_out = pd.DataFrame(columns=df_tmp.columns, index=range(len(df_src)))
         time.sleep(0.2)
 
+        # --- ROBUST COLUMN MAPPING ---
         progress_bar.progress(35, text="Mapping source columns to template...")
-        # Define mapping: source column -> template column
-        # We need to handle variations in column names
+        # Define mapping: template column -> list of possible source column names (case-insensitive, spaces/underscores removed)
         col_map = {
-            'ACCOUNT NUMBER': 'account_no',
-            'BANK': 'bank',
-            'PLACEMENT': 'placement',
-            'CH CODE': 'ch_code',
-            'CH NAME': 'ch_name',
-            'ADD TYPE': 'address_type',
-            'ADDRESS': 'address',
-            'MUNICIPALITY': 'municipality',
-            'DL TYPE': 'dl_type',
-            'REF CODE': 'ref_code',
-            'REFERENCE CODE': 'ref_code',  # alternative
-            'AUTOFIELD DATE': 'autofield_date',
-            'PULLOUT DATE': 'pullout_date',
-            'POUT DATE': 'pullout_date',   # alternative
-            'ENDO DATE': 'endorsement_date',
-            'AREA': 'area',
-            'FINAL AREA': 'final_area'
+            'account_no': ['ACCOUNT NUMBER', 'ACCOUNT_NO', 'ACCOUNTNUMBER'],
+            'bank': ['BANK'],
+            'placement': ['PLACEMENT'],
+            'ch_code': ['CH CODE', 'CH_CODE', 'CHCODE'],
+            'ch_name': ['CH NAME', 'CH_NAME', 'CHNAME'],
+            'address_type': ['ADD TYPE', 'ADD_TYPE', 'ADDTYPE'],
+            'address': ['ADDRESS'],
+            'final_area': ['FINAL AREA', 'FINAL_AREA', 'FINALAREA'],
+            'area': ['AREA'],
+            'municipality': ['MUNICIPALITY'],
+            'dl_type': ['DL TYPE', 'DL_TYPE', 'DLTYPE'],
+            'ref_code': ['REFERENCE CODE', 'REF CODE', 'REF_CODE', 'REFCODE'],
+            'autofield_date': ['AUTOFIELD DATE', 'AUTOFIELD_DATE', 'AUTOFIELDDATE'],
+            'outstanding_balance': ['OB/PRINCIPAL', 'OB_PRINCIPAL', 'OBPRINCIPAL', 'OB'],
+            'endorsement_date': ['ENDO DATE', 'ENDO_DATE', 'ENDODATE', 'ENDORSEMENT DATE'],
+            'pullout_date': ['POUT DATE', 'POUT_DATE', 'POUTDATE', 'PULLOUT DATE'],
         }
-        # For each template column, find a matching source column
-        for src_col, target_col in col_map.items():
-            # Try exact match, then case-insensitive
-            matched_col = None
-            for col in df_src.columns:
-                if col.strip().upper() == src_col.strip().upper():
-                    matched_col = col
-                    break
-            if matched_col is not None:
-                if target_col == 'account_no':
-                    df_out[target_col] = df_src[matched_col].astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
-                    df_out[target_col] = df_out[target_col].replace(['nan', 'None', ''], '0')
-                elif target_col == 'address':
-                    df_out[target_col] = (
-                        df_src[matched_col]
-                        .fillna('')
-                        .str.replace('Blk', 'Block', case=False, regex=False)
-                        .str.replace('BRGY', 'BARANGAY', case=False, regex=False)
-                        .str.replace(r'\bSTA\b\.?', 'SANTA', case=False, regex=True)
-                        .str.replace(r'\bSTO\b\.?', 'SANTO', case=False, regex=True)
-                        .str.upper()
-                    )
-                else:
-                    df_out[target_col] = df_src[matched_col]
 
-        # If final_area was not mapped, use area
-        if 'final_area' not in df_out.columns or df_out['final_area'].isnull().all():
-            if 'area' in df_out.columns:
-                df_out['final_area'] = df_out['area']
+        # Helper function to find matching column
+        def find_column(source_cols, aliases):
+            for col in source_cols:
+                col_clean = col.strip().upper().replace(" ", "").replace("_", "").replace("/", "")
+                for alias in aliases:
+                    alias_clean = alias.strip().upper().replace(" ", "").replace("_", "").replace("/", "")
+                    if col_clean == alias_clean:
+                        return col
+            return None
+
+        # Store matched columns for later use
+        matched_cols = {}
+        for template_col, aliases in col_map.items():
+            matched = find_column(df_src.columns, aliases)
+            if matched:
+                matched_cols[template_col] = matched
+
+        # Apply mapping
+        for template_col, src_col in matched_cols.items():
+            if template_col == 'account_no':
+                df_out[template_col] = df_src[src_col].astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
+                df_out[template_col] = df_out[template_col].replace(['nan', 'None', ''], '0')
+            elif template_col == 'address':
+                df_out[template_col] = (
+                    df_src[src_col]
+                    .fillna('')
+                    .str.replace('Blk', 'Block', case=False, regex=False)
+                    .str.replace('BRGY', 'BARANGAY', case=False, regex=False)
+                    .str.replace(r'\bSTA\b\.?', 'SANTA', case=False, regex=True)
+                    .str.replace(r'\bSTO\b\.?', 'SANTO', case=False, regex=True)
+                    .str.upper()
+                )
+            elif template_col == 'outstanding_balance':
+                # Format numbers: remove commas, convert to clean number
+                vals = df_src[src_col].astype(str).str.strip().str.replace(',', '', regex=False)
+                def format_general_number(val):
+                    if val in ['nan', 'None', '', '0', '0.0']:
+                        return '0'
+                    try:
+                        num = float(val)
+                        if num == int(num):
+                            return str(int(num))
+                        else:
+                            formatted = f"{num:.2f}"
+                            formatted = formatted.rstrip('0').rstrip('.') if '.' in formatted else formatted
+                            return formatted
+                    except ValueError:
+                        return val
+                df_out[template_col] = vals.apply(format_general_number)
+            else:
+                df_out[template_col] = df_src[src_col]
+
+        # If final_area was not mapped but we have 'area', use it
+        if 'final_area' not in matched_cols and 'area' in matched_cols:
+            df_out['final_area'] = df_out['area']
+        elif 'final_area' not in matched_cols and 'area' not in matched_cols:
+            # Try to use 'AREA' column if present
+            for col in df_src.columns:
+                if col.strip().upper() == 'AREA':
+                    df_out['final_area'] = df_src[col]
+                    break
 
         time.sleep(0.2)
 
+        # --- AMOUNT DUE & CMS ID (using CH CODE if available) ---
         progress_bar.progress(60, text="Calculating constants, amounts, and CMS IDs...")
-        # --- Determine if this is PIF HOMELOAN (for OTS) ---
+        # Determine if PIF HOMELOAN
         is_pif_homeloan = False
         if version == "OTS":
             is_pif_homeloan = True
         else:
-            # For MC2, we detect from BANK column
-            if not df_src.empty and 'BANK' in df_src.columns:
-                unique_banks = df_src['BANK'].astype(str).str.strip().str.upper().replace({'NAN': ''}).unique()
+            # For MC2, detect from BANK column
+            if 'bank' in df_out.columns or 'BANK' in df_src.columns:
+                bank_col = 'bank' if 'bank' in df_out.columns else 'BANK'
+                unique_banks = df_src[bank_col].astype(str).str.strip().str.upper().replace({'NAN': ''}).unique()
                 is_pif_homeloan = any('PIF HOMELOAN' in bank for bank in unique_banks)
 
-        # --- MAP OUTSTANDING BALANCE ---
-        # Look for OB/PRINCIPAL column
-        ob_col = None
-        for col in df_src.columns:
-            col_clean = col.strip().upper()
-            if 'OB' in col_clean and 'PRINCIPAL' in col_clean:
-                ob_col = col
-                break
-            elif col_clean == 'OB/PRINCIPAL':
-                ob_col = col
-                break
-        if ob_col:
-            outstanding_values = df_src[ob_col].astype(str).str.strip()
-            outstanding_values = outstanding_values.str.replace(',', '', regex=False)
-
-            def format_general_number(val):
-                if val in ['nan', 'None', '', '0', '0.0']:
-                    return '0'
-                try:
-                    num = float(val)
-                    if num == int(num):
-                        return str(int(num))
-                    else:
-                        formatted = f"{num:.2f}"
-                        formatted = formatted.rstrip('0').rstrip('.') if '.' in formatted else formatted
-                        return formatted
-                except ValueError:
-                    return val
-            df_out['outstanding_balance'] = outstanding_values.apply(format_general_number)
-        elif 'CH CODE' in df_src.columns:
-            ch_codes_clean = df_src['CH CODE'].astype(str).str.strip().str.upper()
-            df_out['outstanding_balance'] = ch_codes_clean.map(amounts_ob_mapping).fillna('0')
-        else:
-            df_out['outstanding_balance'] = '0'
-
-        # --- MAP AMOUNT DUE & CMS ID ---
-        if 'CH CODE' in df_src.columns:
-            ch_codes_clean = df_src['CH CODE'].astype(str).str.strip().str.upper()
-            mapped_due = ch_codes_clean.map(amounts_due_mapping).fillna('0')
-            if 'amount_due' in df_out.columns:
-                df_out['amount_due'] = mapped_due
-
-            df_out['cms_id'] = ch_codes_clean.map(cms_mapping).fillna('')
-
-            # For OTS (and for MC2 if PIF HOMELOAN), enforce CMS ID not blank
+        # Map amount_due and cms_id using CH CODE
+        if 'ch_code' in matched_cols:
+            ch_codes = df_out['ch_code'].astype(str).str.strip().str.upper()
+            # Map amount_due from amounts_due_mapping
+            df_out['amount_due'] = ch_codes.map(amounts_due_mapping).fillna('0')
+            # Map CMS ID
+            df_out['cms_id'] = ch_codes.map(cms_mapping).fillna('')
+            # If PIF HOMELOAN, ensure CMS ID is not blank
             if is_pif_homeloan:
                 blank_cms_mask = df_out['cms_id'] == ''
                 if blank_cms_mask.any():
-                    missing_ch_codes = sorted(set(df_src.loc[blank_cms_mask, 'CH CODE'].astype(str).str.strip()))
+                    missing_ch_codes = sorted(set(df_out.loc[blank_cms_mask, 'ch_code'].astype(str).str.strip()))
                     progress_bar.empty()
                     st.session_state.process_confirm = False
                     st.error(
@@ -520,10 +515,15 @@ if selected_tool == "VRP Mapper":
                         f"Please update your 'cmd_id.xlsx' reference file and try again."
                     )
                     st.stop()
+        else:
+            # No CH CODE found; set default
+            df_out['amount_due'] = '0'
+            df_out['cms_id'] = ''
 
+        # --- SHARED OR EXCLUSIVE ---
         df_out['shared_or_exclusive'] = "SHARED"
 
-        # --- SET TYPE OF ACCOUNT AND VISIT TYPE based on version ---
+        # --- TYPE OF ACCOUNT & VISIT TYPE based on version ---
         if version == "MC2":
             # use auto-assigned from file name
             if is_multiple:
@@ -533,7 +533,6 @@ if selected_tool == "VRP Mapper":
                 if '_FILE_ASSIGNED_TYPE' in df_src.columns:
                     df_out['type_of_account'] = df_src['_FILE_ASSIGNED_TYPE']
                 else:
-                    # fallback: default to DL
                     df_out['type_of_account'] = "DL"
         elif version == "FCL":
             df_out['type_of_account'] = "DL"
@@ -542,7 +541,7 @@ if selected_tool == "VRP Mapper":
 
         # --- VISIT TYPE ---
         if version == "MC2":
-            # use existing determine_visit_type function that looks at remarks and bank
+            # MC2 uses existing logic
             def determine_visit_type_mc2(idx, row):
                 current_type = df_out.at[idx, 'type_of_account']
                 if current_type == "Trans/Details":
@@ -571,11 +570,12 @@ if selected_tool == "VRP Mapper":
         df_out['form_code'] = "vid04qNT"
 
         # area_cluster
-        if 'AREA' in df_src.columns:
-            df_out['area_cluster'] = df_src['AREA'].str.strip().str.upper().map(AREA_MAPPING)
+        if 'area' in matched_cols:
+            df_out['area_cluster'] = df_src[matched_cols['area']].str.strip().str.upper().map(AREA_MAPPING)
         else:
             df_out['area_cluster'] = ""
 
+        # --- DATE FORMATTING ---
         progress_bar.progress(80, text="Formatting dates...")
         date_fields = ['autofield_date', 'endorsement_date', 'pullout_date']
         for field in date_fields:
@@ -584,9 +584,9 @@ if selected_tool == "VRP Mapper":
                 df_out[field] = df_out[field].fillna('')
         time.sleep(0.2)
 
+        # --- GENERATE FILENAMES AND STORE RESULTS ---
         progress_bar.progress(95, text="Generating final files...")
         total_accounts = len(df_out)
-        # Generate filename based on version and bank info
         if version == "MC2":
             if not df_src.empty and 'BANK' in df_src.columns:
                 unique_banks = df_src['BANK'].astype(str).str.strip().str.upper().replace({'NAN': ''}).unique()
@@ -608,10 +608,12 @@ if selected_tool == "VRP Mapper":
         st.session_state.release_filename = f"Released_to_{bank_val}_{total_accounts}.csv"
         st.session_state.processed_data = df_out
 
-        # RELEASE FILE
+        # --- RELEASE FILE ---
+        # Find reference code column again for release file
         ref_col_release = None
         for col in df_src.columns:
-            if col.upper().replace(" ", "") in ['REFCODE', 'REFERENCE CODE', 'REF CODE']:
+            col_clean = col.strip().upper().replace(" ", "").replace("_", "")
+            if col_clean in ['REFCODE', 'REFERENCECODE', 'REFCODE']:
                 ref_col_release = col
                 break
         df_rel = pd.DataFrame()
@@ -619,7 +621,7 @@ if selected_tool == "VRP Mapper":
             df_rel['REF CODE'] = df_src[ref_col_release]
         else:
             df_rel['REF CODE'] = ""
-        df_rel['RELEASED TO'] = ""  # placeholder, can be filled later
+        df_rel['RELEASED TO'] = ""  # placeholder
         st.session_state.release_data = df_rel
 
         progress_bar.progress(100, text="Done!")
