@@ -361,11 +361,20 @@ if selected_tool == "VRP Mapper":
             df_master = pd.concat(df_list, ignore_index=True)
             is_multiple = True
         else:
-            # FCL or OTS – single Excel file
+            # FCL or OTS – single Excel file, read sheet "SUMMARY"
             if src_files is None:
                 st.warning("Please upload an Excel file.")
                 st.stop()
-            df_master = pd.read_excel(src_files, dtype=str, keep_default_na=False)
+            try:
+                # Check if sheet "SUMMARY" exists
+                xl = pd.ExcelFile(src_files)
+                if "SUMMARY" not in xl.sheet_names:
+                    st.error("❌ The Excel file does not contain a sheet named 'SUMMARY'. Please ensure the sheet name is exactly 'SUMMARY'.")
+                    st.stop()
+                df_master = pd.read_excel(src_files, sheet_name="SUMMARY", dtype=str, keep_default_na=False)
+            except Exception as e:
+                st.error(f"❌ Error reading sheet 'SUMMARY': {str(e)}")
+                st.stop()
             df_master.columns = df_master.columns.str.strip()
             is_multiple = False
 
