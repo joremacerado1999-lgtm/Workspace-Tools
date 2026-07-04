@@ -489,9 +489,14 @@ if selected_tool == "VRP Mapper":
         if version == "OTS":
             is_pif_homeloan = True
         else:
-            # For MC2, detect from BANK column
-            if 'bank' in df_out.columns or 'BANK' in df_src.columns:
-                bank_col = 'bank' if 'bank' in df_out.columns else 'BANK'
+            # For MC2 and FCL, detect from BANK column in df_src
+            bank_col = None
+            for col in df_src.columns:
+                col_clean = col.strip().upper().replace(" ", "").replace("_", "").replace("/", "")
+                if col_clean == 'BANK':
+                    bank_col = col
+                    break
+            if bank_col:
                 unique_banks = df_src[bank_col].astype(str).str.strip().str.upper().replace({'NAN': ''}).unique()
                 is_pif_homeloan = any('PIF HOMELOAN' in bank for bank in unique_banks)
 
@@ -588,8 +593,15 @@ if selected_tool == "VRP Mapper":
         progress_bar.progress(95, text="Generating final files...")
         total_accounts = len(df_out)
         if version == "MC2":
-            if not df_src.empty and 'BANK' in df_src.columns:
-                unique_banks = df_src['BANK'].astype(str).str.strip().str.upper().replace({'NAN': ''}).unique()
+            # Find BANK column for filename
+            bank_col = None
+            for col in df_src.columns:
+                col_clean = col.strip().upper().replace(" ", "").replace("_", "").replace("/", "")
+                if col_clean == 'BANK':
+                    bank_col = col
+                    break
+            if bank_col:
+                unique_banks = df_src[bank_col].astype(str).str.strip().str.upper().replace({'NAN': ''}).unique()
                 unique_banks = [b for b in unique_banks if b]
                 if len(unique_banks) == 1 and unique_banks[0] == "PIF HOMELOAN":
                     bank_val = "PIF HOME LOAN"
