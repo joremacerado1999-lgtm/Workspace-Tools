@@ -203,21 +203,30 @@ if selected_tool == "VRP Mapper":
     if src_files:
         df_list = []
         force_trans_details = False
+        force_dl = False
         
-        # --- Auto-detect the Trans/Details-only mapping file by name ---
-        TRANS_DETAILS_ONLY_FILENAME = "NEW VRP ACCOUNTS FOR TAG_PIF REVISIT- NO DL_JOREM FOR UPLOAD"
-        target_name_clean = re.sub(r'[\s_]+', ' ', TRANS_DETAILS_ONLY_FILENAME.strip().upper())
+        # --- Auto-detect mapping files by name ---
+        def clean_filename(name):
+            return re.sub(r'[\s_]+', ' ', name.strip().upper())
+            
+        TRANS_FILENAME = clean_filename("NEW VRP ACCOUNTS FOR TAG_PIF REVISIT- NO DL_JOREM FOR UPLOAD")
+        DL_FILENAME_1 = clean_filename("NEW VRP ACCOUNTS FOR TAG_PIF WITH DL_JOREM FOR UPLOAD")
+        DL_FILENAME_2 = clean_filename("NEW VRP ACCOUNTS FOR TAG_MC2- OTHERS_JOREM FOR UPLOAD")
         
         for file in src_files:
             df_temp = pd.read_csv(file, dtype=str, keep_default_na=False)
             df_temp.columns = df_temp.columns.str.strip()
             df_list.append(df_temp)
             
-            uploaded_name_clean = re.sub(r'[\s_]+', ' ', os.path.splitext(file.name)[0].strip().upper())
+            uploaded_name_clean = clean_filename(os.path.splitext(file.name)[0])
             
-            # If ANY uploaded file matches the target name, we force Trans/Details
-            if target_name_clean in uploaded_name_clean or uploaded_name_clean.startswith(target_name_clean):
+            # Auto-assign variables based on filename patterns
+            if TRANS_FILENAME in uploaded_name_clean or uploaded_name_clean.startswith(TRANS_FILENAME):
                 force_trans_details = True
+            elif DL_FILENAME_1 in uploaded_name_clean or uploaded_name_clean.startswith(DL_FILENAME_1):
+                force_dl = True
+            elif DL_FILENAME_2 in uploaded_name_clean or uploaded_name_clean.startswith(DL_FILENAME_2):
+                force_dl = True
         
         # Combine all uploaded files into one master dataframe
         df_master = pd.concat(df_list, ignore_index=True)
@@ -227,14 +236,24 @@ if selected_tool == "VRP Mapper":
         col1, col2 = st.columns([1, 1])
         with col1:
             if st.button("✨ Process and Map Data", use_container_width=True):
-                # Bypass modal entirely if the specific Trans/Details file is detected
-                if force_trans_details:
+                
+                # 1. Check if it's the Trans/Details bypass
+                if force_trans_details and not force_dl:
                     st.session_state.selected_type = "Trans/Details"
                     st.session_state.process_confirm = True
                     st.session_state.show_account_type_modal = False
+                    
+                # 2. Check if it's the new DL bypass
+                elif force_dl and not force_trans_details:
+                    st.session_state.selected_type = "DL"
+                    st.session_state.process_confirm = True
+                    st.session_state.show_account_type_modal = False
+                    
+                # 3. Fallback to showing the manual selection modal
                 else:
                     st.session_state.show_account_type_modal = True
                     st.session_state.process_confirm = False
+                    
         with col2:
             if st.button("🔄 Reset / Clear All", use_container_width=True):
                 reset_app()
@@ -242,16 +261,21 @@ if selected_tool == "VRP Mapper":
         if st.session_state.show_account_type_modal:
             left, middle, right = st.columns([1, 2, 1])
             with middle:
-                st.markdown("<h3 style='text-align:center'>Select Type of Account</h3>", unsafe_allow_html=True)
-                selected_type = st.radio(
-                    "", ["DL", "Trans/Details"],
-                    index=0,
-                    key="account_type_radio_multi"
-                )
-                if st.button("Process Now", type="primary", use_container_width=True):
-                    st.session_state.selected_type = selected_type
-                    st.session_state.process_confirm = True
-                    st.session_state.show_account_type_modal = False
+                # Wrapped inside st.form to stop the modal from disappearing when selecting an option
+                with st.form(key="account_type_form"):
+                    st.markdown("<h3 style='text-align:center'>Select Type of Account</h3>", unsafe_allow_html=True)
+                    
+                    if force_trans_details and force_dl:
+                        st.warning("⚠️ Mixed account types detected in uploaded files! Please manually select the type for this batch.")
+                        
+                    selected_type = st.radio("", ["DL", "Trans/Details"], index=0)
+                    submit_btn = st.form_submit_button("Process Now", type="primary", use_container_width=True)
+                    
+                    if submit_btn:
+                        st.session_state.selected_type = selected_type
+                        st.session_state.process_confirm = True
+                        st.session_state.show_account_type_modal = False
+                        st.rerun()
 
         if st.session_state.process_confirm:
             progress_bar = st.progress(0, text="Initializing processing...")
