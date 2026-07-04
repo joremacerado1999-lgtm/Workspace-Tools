@@ -24,62 +24,118 @@ import base64
 # --- PAGE CONFIGURATION MUST BE AT THE VERY TOP ---
 st.set_page_config(page_title="Workspace Tools", page_icon="🧰", layout="wide")
 
-# ========== GLOBAL THEME & STYLING ==========
+# ========== SESSION STATE INIT ==========
+if 'entered' not in st.session_state:
+    st.session_state.entered = False  # Show welcome page initially
+
+# ========== WELCOME PAGE ==========
+if not st.session_state.entered:
+    # Hide sidebar and set full-width welcome layout
+    st.markdown(
+        """
+        <style>
+        section[data-testid="stSidebar"] {
+            display: none !important;
+        }
+        .main > div {
+            padding: 2rem 4rem;
+        }
+        .welcome-card {
+            background: white;
+            border-radius: 30px;
+            padding: 3rem 4rem;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.08);
+            text-align: center;
+            max-width: 700px;
+            margin: 5rem auto;
+            border: 1px solid rgba(255,255,255,0.3);
+        }
+        .welcome-title {
+            font-size: 3.2rem;
+            font-weight: 700;
+            color: #1e2a3a;
+            margin-bottom: 0.5rem;
+        }
+        .welcome-sub {
+            font-size: 1.2rem;
+            color: #4a5a6a;
+            margin-bottom: 2rem;
+        }
+        .welcome-emoji {
+            font-size: 4rem;
+            margin-bottom: 1rem;
+        }
+        .stButton > button {
+            background: #2e7d32 !important;
+            color: white !important;
+            border: none !important;
+            padding: 0.8rem 3rem !important;
+            border-radius: 40px !important;
+            font-size: 1.2rem !important;
+            font-weight: 600 !important;
+            box-shadow: 0 8px 20px rgba(46, 125, 50, 0.25);
+            transition: all 0.3s ease;
+        }
+        .stButton > button:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 12px 28px rgba(46, 125, 50, 0.35);
+            background: #1b5e20 !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    st.markdown("""
+        <div class="welcome-card">
+            <div class="welcome-emoji">🧰</div>
+            <div class="welcome-title">Welcome to Workspace Tools</div>
+            <div class="welcome-sub">
+                Your all‑in‑one toolkit for VRP mapping, field results, and signature extraction.<br>
+                Click the button below to get started.
+            </div>
+        </div>
+    """, unsafe_allow_html=True)
+
+    col1, col2, col3 = st.columns([1, 1, 1])
+    with col2:
+        if st.button("🚀 Enter Workspace", use_container_width=False):
+            st.session_state.entered = True
+            st.rerun()
+    st.stop()
+
+
+# ========== MINIMAL STYLING (button animations & dropdown visibility) ==========
 st.markdown(
     """
     <style>
-    /* ----- Global Styles ----- */
-    html, body, .stApp {
-        background: linear-gradient(135deg, #f5f7fa 0%, #e9edf5 100%);
-        font-family: 'Segoe UI', Roboto, sans-serif;
-    }
-    .main > div {
-        padding: 1rem 2rem;
-    }
-    h1, h2, h3, h4, h5, h6 {
-        color: #1e2a3a;
-        font-weight: 600;
-        letter-spacing: -0.02em;
-    }
-    .stSidebar {
-        background: #ffffffdd;
-        backdrop-filter: blur(10px);
-        border-right: 1px solid rgba(0,0,0,0.05);
-        box-shadow: 2px 0 12px rgba(0,0,0,0.03);
-    }
-    .stSidebar .sidebar-content {
-        padding: 1.5rem 1rem;
-    }
-    .stRadio > label {
-        font-weight: 500;
-        color: #1e2a3a;
-    }
+    /* Button hover/active animations (original) */
     .stButton > button, .stDownloadButton > button {
-        background: #ffffff;
-        border: 1px solid #d0d9e8;
-        border-radius: 12px;
-        color: #1e2a3a;
-        font-weight: 500;
-        padding: 0.5rem 1.2rem;
-        transition: all 0.25s ease;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+        transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+        border-radius: 8px !important;
     }
     .stButton > button:hover, .stDownloadButton > button:hover {
-        background: #2e7d32;
-        color: white;
-        border-color: #2e7d32;
-        transform: translateY(-2px);
-        box-shadow: 0 8px 18px rgba(46, 125, 50, 0.25);
+        transform: translateY(-4px);
+        box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2) !important;
+        border-color: #2e7d32 !important;
+        animation: gentle-pulse 1.5s infinite ease-in-out;
+        z-index: 1;
     }
     .stButton > button:active, .stDownloadButton > button:active {
-        transform: translateY(0px) scale(0.98);
-        box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+        transform: translateY(2px) scale(0.98) !important;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1) !important;
+        animation: none;
+    }
+    @keyframes gentle-pulse {
+        0% { transform: translateY(-4px) scale(1); }
+        50% { transform: translateY(-4px) scale(1.03); }
+        100% { transform: translateY(-4px) scale(1); }
     }
 
-    /* ----- Dropdown (Selectbox) & Text Area visibility ----- */
+    /* Dropdown & text area – white background for readability */
     .stSelectbox div[data-baseweb="select"] {
         background-color: #ffffff !important;
-        border-radius: 12px;
+        border-radius: 8px;
         border: 1px solid #d0d9e8;
     }
     .stSelectbox div[data-baseweb="select"] > div {
@@ -95,7 +151,7 @@ st.markdown(
     .stTextArea textarea {
         background-color: #ffffff !important;
         color: #1e2a3a !important;
-        border-radius: 12px;
+        border-radius: 8px;
         border: 1px solid #d0d9e8;
     }
     .stTextArea textarea:focus {
@@ -103,90 +159,11 @@ st.markdown(
         box-shadow: 0 0 0 2px rgba(46, 125, 50, 0.2);
     }
 
-    /* Dark theme overrides */
-    [data-theme="dark"] .stSelectbox div[data-baseweb="select"] {
-        background-color: #2d2d2d !important;
-        border-color: #555;
-    }
-    [data-theme="dark"] .stSelectbox div[data-baseweb="select"] > div {
-        background-color: #2d2d2d !important;
-        color: #eee !important;
-    }
-    [data-theme="dark"] .stSelectbox ul {
-        background-color: #2d2d2d !important;
-    }
-    [data-theme="dark"] .stSelectbox li {
-        color: #eee !important;
-    }
-    [data-theme="dark"] .stSelectbox li:hover {
-        background-color: #3d3d3d !important;
-    }
-    [data-theme="dark"] .stTextArea textarea {
-        background-color: #2d2d2d !important;
-        color: #eee !important;
-        border-color: #555;
-    }
-    [data-theme="dark"] .stTextArea textarea:focus {
-        border-color: #4caf50;
-        box-shadow: 0 0 0 2px rgba(76, 175, 80, 0.3);
-    }
-
-    [data-theme="dark"] .stButton > button,
-    [data-theme="dark"] .stDownloadButton > button {
-        background: #2d2d2d;
-        border-color: #555;
-        color: #eee;
-    }
-    [data-theme="dark"] .stButton > button:hover,
-    [data-theme="dark"] .stDownloadButton > button:hover {
-        background: #2e7d32;
-        color: white;
-        border-color: #2e7d32;
-    }
-    [data-theme="dark"] .stAlert {
-        background: #1e2a3a;
-        color: #eee;
-    }
-    [data-theme="dark"] .stSuccess {
-        background: #1b3a1b;
-        border-color: #4caf50;
-        color: #c8e6c9;
-    }
-    [data-theme="dark"] .stError {
-        background: #3a1b1b;
-        border-color: #c62828;
-        color: #ffcdd2;
-    }
-    [data-theme="dark"] .stWarning {
-        background: #3a2e1b;
-        border-color: #f9a825;
-        color: #fff9c4;
-    }
-    [data-theme="dark"] .stInfo {
-        background: #1b2a3a;
-        border-color: #1565c0;
-        color: #bbdefb;
-    }
-    [data-theme="dark"] .stExpander {
-        background: #2d2d2d;
-        border-color: #444;
-    }
-    [data-theme="dark"] .stDataFrame {
-        background: #1e1e1e;
-        color: #ddd;
-    }
-    [data-theme="dark"] .stFileUploader > div {
-        background: #2d2d2d;
-        border-color: #555;
-    }
-    [data-theme="dark"] .stSidebar {
-        background: #1e1e1edd;
-        border-right: 1px solid #333;
-    }
-    .center-box {
-        max-width: 600px;
-        margin: 0 auto;
-        text-align: center;
+    /* Sidebar subtle style (optional) */
+    .stSidebar {
+        background: #ffffffdd;
+        backdrop-filter: blur(4px);
+        border-right: 1px solid rgba(0,0,0,0.05);
     }
     </style>
     """,
@@ -216,7 +193,7 @@ def play_completion_sound():
     """
     st.components.v1.html(html, height=0)
 
-# ========== SESSION STATE ==========
+# ========== SESSION STATE (other states) ==========
 if 'uploader_key' not in st.session_state:
     st.session_state.uploader_key = 0
 if 'processed_data' not in st.session_state:
@@ -238,7 +215,7 @@ if 'is_multiple_files' not in st.session_state:
 if 'cms_id_warning' not in st.session_state:
     st.session_state.cms_id_warning = None
 if 'version' not in st.session_state:
-    st.session_state.version = "MC2"   # default
+    st.session_state.version = "MC2"
 
 # Field Result session state
 if 'field_result_buffer' not in st.session_state:
@@ -397,7 +374,6 @@ if selected_tool == "VRP Mapper":
                 df_temp = pd.read_csv(file, dtype=str, keep_default_na=False)
                 df_temp.columns = df_temp.columns.str.strip()
                 raw_name = os.path.splitext(file.name)[0].strip().upper()
-                # Auto-assign type based on filename (MC2 logic)
                 file_type = "DL"
                 if "REVISIT" in raw_name and "NO DL" in raw_name:
                     file_type = "Trans/Details"
@@ -415,7 +391,6 @@ if selected_tool == "VRP Mapper":
                 st.warning("Please upload an Excel file.")
                 st.stop()
             try:
-                # Check if sheet "SUMMARY" exists
                 xl = pd.ExcelFile(src_files)
                 if "SUMMARY" not in xl.sheet_names:
                     st.error("❌ The Excel file does not contain a sheet named 'SUMMARY'. Please ensure the sheet name is exactly 'SUMMARY'.")
@@ -435,7 +410,6 @@ if selected_tool == "VRP Mapper":
         progress_bar.progress(15, text="Filtering target codes...")
         if pasted_codes.strip():
             codes_list = [c.strip() for c in pasted_codes.replace(',', '\n').split('\n') if c.strip()]
-            # Find reference code column
             ref_col = None
             for col in df_master.columns:
                 col_clean = col.strip().upper().replace(" ", "").replace("_", "")
@@ -456,7 +430,6 @@ if selected_tool == "VRP Mapper":
 
         # --- ROBUST COLUMN MAPPING ---
         progress_bar.progress(35, text="Mapping source columns to template...")
-        # Define mapping: template column -> list of possible source column names (case-insensitive, spaces/underscores removed)
         col_map = {
             'account_no': ['ACCOUNT NUMBER', 'ACCOUNT_NO', 'ACCOUNTNUMBER'],
             'bank': ['BANK'],
@@ -476,7 +449,6 @@ if selected_tool == "VRP Mapper":
             'pullout_date': ['POUT DATE', 'POUT_DATE', 'POUTDATE', 'PULLOUT DATE'],
         }
 
-        # Helper function to find matching column
         def find_column(source_cols, aliases):
             for col in source_cols:
                 col_clean = col.strip().upper().replace(" ", "").replace("_", "").replace("/", "")
@@ -486,14 +458,12 @@ if selected_tool == "VRP Mapper":
                         return col
             return None
 
-        # Store matched columns for later use
         matched_cols = {}
         for template_col, aliases in col_map.items():
             matched = find_column(df_src.columns, aliases)
             if matched:
                 matched_cols[template_col] = matched
 
-        # Apply mapping
         for template_col, src_col in matched_cols.items():
             if template_col == 'account_no':
                 df_out[template_col] = df_src[src_col].astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
@@ -509,7 +479,6 @@ if selected_tool == "VRP Mapper":
                     .str.upper()
                 )
             elif template_col == 'outstanding_balance':
-                # Format numbers: remove commas, convert to clean number
                 vals = df_src[src_col].astype(str).str.strip().str.replace(',', '', regex=False)
                 def format_general_number(val):
                     if val in ['nan', 'None', '', '0', '0.0']:
@@ -528,11 +497,9 @@ if selected_tool == "VRP Mapper":
             else:
                 df_out[template_col] = df_src[src_col]
 
-        # If final_area was not mapped but we have 'area', use it
         if 'final_area' not in matched_cols and 'area' in matched_cols:
             df_out['final_area'] = df_out['area']
         elif 'final_area' not in matched_cols and 'area' not in matched_cols:
-            # Try to use 'AREA' column if present
             for col in df_src.columns:
                 if col.strip().upper() == 'AREA':
                     df_out['final_area'] = df_src[col]
@@ -540,14 +507,12 @@ if selected_tool == "VRP Mapper":
 
         time.sleep(0.2)
 
-        # --- AMOUNT DUE & CMS ID (using CH CODE if available) ---
+        # --- AMOUNT DUE & CMS ID ---
         progress_bar.progress(60, text="Calculating constants, amounts, and CMS IDs...")
-        # Determine if PIF HOMELOAN
         is_pif_homeloan = False
         if version == "OTS":
             is_pif_homeloan = True
         else:
-            # For MC2 and FCL, detect from BANK column in df_src
             bank_col = None
             for col in df_src.columns:
                 col_clean = col.strip().upper().replace(" ", "").replace("_", "").replace("/", "")
@@ -558,14 +523,10 @@ if selected_tool == "VRP Mapper":
                 unique_banks = df_src[bank_col].astype(str).str.strip().str.upper().replace({'NAN': ''}).unique()
                 is_pif_homeloan = any('PIF HOMELOAN' in bank for bank in unique_banks)
 
-        # Map amount_due and cms_id using CH CODE
         if 'ch_code' in matched_cols:
             ch_codes = df_out['ch_code'].astype(str).str.strip().str.upper()
-            # Map amount_due from amounts_due_mapping
             df_out['amount_due'] = ch_codes.map(amounts_due_mapping).fillna('0')
-            # Map CMS ID
             df_out['cms_id'] = ch_codes.map(cms_mapping).fillna('')
-            # If PIF HOMELOAN, ensure CMS ID is not blank
             if is_pif_homeloan:
                 blank_cms_mask = df_out['cms_id'] == ''
                 if blank_cms_mask.any():
@@ -579,20 +540,16 @@ if selected_tool == "VRP Mapper":
                     )
                     st.stop()
         else:
-            # No CH CODE found; set default
             df_out['amount_due'] = '0'
             df_out['cms_id'] = ''
 
-        # --- SHARED OR EXCLUSIVE ---
         df_out['shared_or_exclusive'] = "SHARED"
 
-        # --- TYPE OF ACCOUNT & VISIT TYPE based on version ---
+        # --- TYPE OF ACCOUNT & VISIT TYPE ---
         if version == "MC2":
-            # use auto-assigned from file name
             if is_multiple:
                 df_out['type_of_account'] = df_src['_FILE_ASSIGNED_TYPE']
             else:
-                # if only one file, we might still have _FILE_ASSIGNED_TYPE
                 if '_FILE_ASSIGNED_TYPE' in df_src.columns:
                     df_out['type_of_account'] = df_src['_FILE_ASSIGNED_TYPE']
                 else:
@@ -602,9 +559,7 @@ if selected_tool == "VRP Mapper":
         elif version == "OTS":
             df_out['type_of_account'] = "Trans/Details"
 
-        # --- VISIT TYPE ---
         if version == "MC2":
-            # MC2 uses existing logic
             def determine_visit_type_mc2(idx, row):
                 current_type = df_out.at[idx, 'type_of_account']
                 if current_type == "Trans/Details":
@@ -627,18 +582,15 @@ if selected_tool == "VRP Mapper":
         elif version == "OTS":
             df_out['visit_type'] = "REGULAR"
 
-        # --- COMMON FIELDS ---
         df_out['month'] = datetime.now().strftime('%B').upper()
         df_out['account_type'] = "HOUSING"
         df_out['form_code'] = "vid04qNT"
 
-        # area_cluster
         if 'area' in matched_cols:
             df_out['area_cluster'] = df_src[matched_cols['area']].str.strip().str.upper().map(AREA_MAPPING)
         else:
             df_out['area_cluster'] = ""
 
-        # --- DATE FORMATTING ---
         progress_bar.progress(80, text="Formatting dates...")
         date_fields = ['autofield_date', 'endorsement_date', 'pullout_date']
         for field in date_fields:
@@ -647,11 +599,9 @@ if selected_tool == "VRP Mapper":
                 df_out[field] = df_out[field].fillna('')
         time.sleep(0.2)
 
-        # --- GENERATE FILENAMES AND STORE RESULTS ---
         progress_bar.progress(95, text="Generating final files...")
         total_accounts = len(df_out)
         if version == "MC2":
-            # Find BANK column for filename
             bank_col = None
             for col in df_src.columns:
                 col_clean = col.strip().upper().replace(" ", "").replace("_", "").replace("/", "")
@@ -671,7 +621,7 @@ if selected_tool == "VRP Mapper":
                 bank_val = "FILTERED"
         elif version == "FCL":
             bank_val = "FCL"
-        else:  # OTS
+        else:
             bank_val = "OTS"
 
         st.session_state.generated_filename = f"{bank_val}_{total_accounts}.csv"
@@ -679,7 +629,6 @@ if selected_tool == "VRP Mapper":
         st.session_state.processed_data = df_out
 
         # --- RELEASE FILE ---
-        # Find reference code column for REF CODE
         ref_col_release = None
         for col in df_src.columns:
             col_clean = col.strip().upper().replace(" ", "").replace("_", "")
@@ -687,7 +636,6 @@ if selected_tool == "VRP Mapper":
                 ref_col_release = col
                 break
 
-        # For OTS, look for "TAG FM" column for RELEASED TO
         released_to_col = None
         if version == "OTS":
             for col in df_src.columns:
@@ -697,14 +645,8 @@ if selected_tool == "VRP Mapper":
                     break
 
         df_rel = pd.DataFrame()
-        if ref_col_release:
-            df_rel['REF CODE'] = df_src[ref_col_release]
-        else:
-            df_rel['REF CODE'] = ""
-        if released_to_col:
-            df_rel['RELEASED TO'] = df_src[released_to_col]
-        else:
-            df_rel['RELEASED TO'] = ""  # placeholder for other versions
+        df_rel['REF CODE'] = df_src[ref_col_release] if ref_col_release else ""
+        df_rel['RELEASED TO'] = df_src[released_to_col] if released_to_col else ""
         st.session_state.release_data = df_rel
 
         progress_bar.progress(100, text="Done!")
@@ -713,7 +655,7 @@ if selected_tool == "VRP Mapper":
         st.success(f"✅ Processed {total_accounts} accounts in {elapsed:.2f} seconds.")
         play_completion_sound()
 
-    # Display results if data exists
+    # Display results
     if st.session_state.processed_data is not None:
         df_out = st.session_state.processed_data
         df_release = st.session_state.release_data
