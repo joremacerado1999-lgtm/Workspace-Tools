@@ -75,46 +75,10 @@ st.markdown(
         transform: translateY(0px) scale(0.98);
         box-shadow: 0 2px 6px rgba(0,0,0,0.1);
     }
-    /* ----- Progress Bar (visible & readable) ----- */
-    .stProgress {
-        background: #e0e0e0 !important;
-        border-radius: 20px !important;
-        height: 30px !important;
-        overflow: hidden !important;
-        position: relative !important;
-        margin: 0.5rem 0;
-    }
-    .stProgress > div {
-        background: #2e7d32 !important;
-        border-radius: 20px !important;
-        height: 100% !important;
-        transition: width 0.3s ease;
-    }
-    .stProgress .stProgressText {
-        color: #ffffff !important;
-        font-weight: 700 !important;
-        font-size: 0.95rem !important;
-        line-height: 30px !important;
-        text-align: center !important;
-        text-shadow: 0 1px 4px rgba(0,0,0,0.4) !important;
-        position: absolute !important;
-        width: 100% !important;
-        left: 0 !important;
-        top: 0 !important;
-        pointer-events: none !important;
-        z-index: 1 !important;
-    }
+    /* ----- Progress Bar: DEFAULT (no custom styling) ----- */
+    /* Removed custom .stProgress rules to use Streamlit's default */
+
     /* Dark theme overrides */
-    [data-theme="dark"] .stProgress {
-        background: #555 !important;
-    }
-    [data-theme="dark"] .stProgress > div {
-        background: #4caf50 !important;
-    }
-    [data-theme="dark"] .stProgress .stProgressText {
-        color: #ffffff !important;
-        text-shadow: 0 1px 6px rgba(0,0,0,0.7) !important;
-    }
     [data-theme="dark"] .stButton > button,
     [data-theme="dark"] .stDownloadButton > button {
         background: #2d2d2d;
