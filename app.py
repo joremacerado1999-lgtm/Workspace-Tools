@@ -188,6 +188,8 @@ if 'is_multiple_files' not in st.session_state:
     st.session_state.is_multiple_files = False
 if 'cms_id_warning' not in st.session_state:
     st.session_state.cms_id_warning = None
+if 'version' not in st.session_state:
+    st.session_state.version = "MC2"   # default
 
 # Field Result session state
 if 'field_result_buffer' not in st.session_state:
@@ -227,6 +229,15 @@ st.sidebar.info("Select a tool from the menu above to get started.")
 if selected_tool == "VRP Mapper":
     st.title("🚀 VRP Mapper")
 
+    # --- Version Dropdown ---
+    version = st.selectbox(
+        "Select Version:",
+        options=["MC2", "FCL", "OTS"],
+        index=["MC2", "FCL", "OTS"].index(st.session_state.version),
+        key="version_select"
+    )
+    st.session_state.version = version
+
     # --- 1. SETTINGS & TEMPLATE ---
     template_filename = 'demand_letter_template.csv'
     if not os.path.exists(template_filename):
@@ -234,7 +245,7 @@ if selected_tool == "VRP Mapper":
         st.stop()
     df_tmp = pd.read_csv(template_filename, dtype=str)
 
-    # --- CMS ID REFERENCE LOADING ---
+    # --- CMS ID REFERENCE LOADING (always load) ---
     @st.cache_data
     def load_cms_data():
         ref_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cmd_id.xlsx")
@@ -274,7 +285,7 @@ if selected_tool == "VRP Mapper":
 
     amounts_ob_mapping, amounts_due_mapping = load_amounts_data()
 
-    # --- FULL AREA CLUSTER REFERENCE MAPPING ---
+    # --- AREA CLUSTER MAPPING (same as before) ---
     AREA_MAPPING = {
         'ABRA': 'NORTH LUZON', 'AURORA': 'NORTH LUZON', 'BATAAN': 'NORTH LUZON',
         'BENGUET': 'NORTH LUZON', 'BULACAN': 'NORTH LUZON', 'CAGAYAN': 'NORTH LUZON',
@@ -299,184 +310,245 @@ if selected_tool == "VRP Mapper":
 
     st.divider()
 
-    # --- INPUT SECTION ---
-    src_files = st.file_uploader("Upload VRP ACCOUNTS CSV(s)", type=['csv'], accept_multiple_files=True, key=f"uploader_{st.session_state.uploader_key}")
+    # --- FILE UPLOADER based on version ---
+    if version == "MC2":
+        src_files = st.file_uploader(
+            "Upload VRP ACCOUNTS CSV(s)",
+            type=['csv'],
+            accept_multiple_files=True,
+            key=f"uploader_{st.session_state.uploader_key}"
+        )
+    else:  # FCL or OTS
+        src_files = st.file_uploader(
+            "Upload VRP ACCOUNTS Excel file",
+            type=['xlsx'],
+            accept_multiple_files=False,
+            key=f"uploader_{st.session_state.uploader_key}"
+        )
 
-    if src_files:
-        df_list = []
-        for file in src_files:
-            df_temp = pd.read_csv(file, dtype=str, keep_default_na=False)
-            df_temp.columns = df_temp.columns.str.strip()
-            raw_name = os.path.splitext(file.name)[0].strip().upper()
-            file_type = "DL"
-            if "REVISIT" in raw_name and "NO DL" in raw_name:
-                file_type = "Trans/Details"
-            elif "WITH DL" in raw_name:
+    # Optional filter (pasted codes) - works for all versions
+    pasted_codes = st.text_area("Paste Reference Codes (Optional filter - one per line):", height=150)
+
+    col1, col2 = st.columns([1, 1])
+    with col1:
+        if st.button("✨ Process and Map Data", use_container_width=True):
+            st.session_state.process_confirm = True
+    with col2:
+        if st.button("🔄 Reset / Clear All", use_container_width=True):
+            reset_app()
+
+    if st.session_state.process_confirm:
+        # --- READ DATA ---
+        if version == "MC2":
+            if not src_files:
+                st.warning("Please upload at least one CSV file.")
+                st.stop()
+            df_list = []
+            for file in src_files:
+                df_temp = pd.read_csv(file, dtype=str, keep_default_na=False)
+                df_temp.columns = df_temp.columns.str.strip()
+                raw_name = os.path.splitext(file.name)[0].strip().upper()
+                # Auto-assign type based on filename (MC2 logic)
                 file_type = "DL"
-            elif "MC2" in raw_name and "OTHERS" in raw_name:
-                file_type = "DL"
-            df_temp['_FILE_ASSIGNED_TYPE'] = file_type
-            df_list.append(df_temp)
-        df_master = pd.concat(df_list, ignore_index=True)
+                if "REVISIT" in raw_name and "NO DL" in raw_name:
+                    file_type = "Trans/Details"
+                elif "WITH DL" in raw_name:
+                    file_type = "DL"
+                elif "MC2" in raw_name and "OTHERS" in raw_name:
+                    file_type = "DL"
+                df_temp['_FILE_ASSIGNED_TYPE'] = file_type
+                df_list.append(df_temp)
+            df_master = pd.concat(df_list, ignore_index=True)
+            is_multiple = True
+            # For MC2, we'll later set type_of_account based on _FILE_ASSIGNED_TYPE
+        else:
+            # FCL or OTS – single Excel file
+            if src_files is None:
+                st.warning("Please upload an Excel file.")
+                st.stop()
+            # src_files is a single file (not list) when accept_multiple_files=False
+            df_master = pd.read_excel(src_files, dtype=str, keep_default_na=False)
+            df_master.columns = df_master.columns.str.strip()
+            # No auto-assign; we'll set type_of_account and visit_type later
+            is_multiple = False
 
-        pasted_codes = st.text_area("Paste Reference Codes (Optional filter - one per line):", height=150)
+        start_time = time.time()
+        progress_bar = st.progress(0, text="Initializing processing...")
+        time.sleep(0.2)
 
-        col1, col2 = st.columns([1, 1])
-        with col1:
-            if st.button("✨ Process and Map Data", use_container_width=True):
-                st.session_state.show_account_type_modal = True
-                st.session_state.process_confirm = False
-        with col2:
-            if st.button("🔄 Reset / Clear All", use_container_width=True):
-                reset_app()
-
-        if st.session_state.show_account_type_modal:
-            left, middle, right = st.columns([1, 2, 1])
-            with middle:
-                with st.form(key="account_type_form"):
-                    st.markdown("<h3 style='text-align:center'>Select Type of Account</h3>", unsafe_allow_html=True)
-                    is_multiple = len(src_files) > 1
-                    if is_multiple:
-                        st.warning("⚠️ Multiple files detected. The account type is disabled and will be automatically assigned based on the file name.")
-                        selected_type = st.radio("Type of Account:", ["DL", "Trans/Details"], index=0, disabled=True)
-                    else:
-                        first_file_type = df_master['_FILE_ASSIGNED_TYPE'].iloc[0] if not df_master.empty else "DL"
-                        default_idx = 1 if first_file_type == "Trans/Details" else 0
-                        selected_type = st.radio("Type of Account:", ["DL", "Trans/Details"], index=default_idx, disabled=False)
-                    submit_btn = st.form_submit_button("Process Now", type="primary", use_container_width=True)
-                    if submit_btn:
-                        st.session_state.selected_type = selected_type
-                        st.session_state.is_multiple_files = is_multiple
-                        st.session_state.process_confirm = True
-                        st.session_state.show_account_type_modal = False
-                        st.rerun()
-
-        if st.session_state.process_confirm:
-            start_time = time.time()
-            progress_bar = st.progress(0, text="Initializing processing...")
-            time.sleep(0.2)
-
-            progress_bar.progress(15, text="Filtering target codes...")
-            if pasted_codes.strip():
-                codes_list = [c.strip() for c in pasted_codes.replace(',', '\n').split('\n') if c.strip()]
-                df_src = df_master[df_master['REF CODE'].isin(codes_list)].copy()
+        # --- FILTER by reference codes ---
+        progress_bar.progress(15, text="Filtering target codes...")
+        if pasted_codes.strip():
+            codes_list = [c.strip() for c in pasted_codes.replace(',', '\n').split('\n') if c.strip()]
+            # The column name for reference code might be "REF CODE" or "REFERENCE CODE"
+            ref_col = None
+            for col in df_master.columns:
+                if col.upper().replace(" ", "") in ['REFCODE', 'REFERENCE CODE', 'REF CODE']:
+                    ref_col = col
+                    break
+            if ref_col:
+                df_src = df_master[df_master[ref_col].isin(codes_list)].copy()
             else:
-                df_src = df_master.copy()
+                st.error("Reference code column not found in the data.")
+                st.stop()
+        else:
+            df_src = df_master.copy()
 
-            df_src = df_src.reset_index(drop=True)
-            df_out = pd.DataFrame(columns=df_tmp.columns, index=range(len(df_src)))
-            time.sleep(0.2)
+        df_src = df_src.reset_index(drop=True)
+        df_out = pd.DataFrame(columns=df_tmp.columns, index=range(len(df_src)))
+        time.sleep(0.2)
 
-            progress_bar.progress(35, text="Mapping source columns to template...")
-            mapping = {
-                'ACCOUNT NUMBER': 'account_no', 'BANK': 'bank', 'PLACEMENT': 'placement',
-                'CH CODE': 'ch_code', 'CH NAME': 'ch_name', 'ADD TYPE': 'address_type',
-                'ADDRESS': 'address', 'MUNICIPALITY': 'municipality', 'DL TYPE': 'dl_type',
-                'REF CODE': 'ref_code', 'AUTOFIELD DATE': 'autofield_date',
-                'PULLOUT DATE': 'pullout_date', 'ENDO DATE': 'endorsement_date', 'AREA': 'area'
-            }
-            for src_col, target_col in mapping.items():
-                if src_col in df_src.columns:
-                    if target_col == 'account_no':
-                        df_out[target_col] = df_src[src_col].astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
-                        df_out[target_col] = df_out[target_col].replace(['nan', 'None', ''], '0')
-                    elif target_col == 'address':
-                        df_out[target_col] = (
-                            df_src[src_col]
-                            .fillna('')
-                            .str.replace('Blk', 'Block', case=False, regex=False)
-                            .str.replace('BRGY', 'BARANGAY', case=False, regex=False)
-                            .str.replace(r'\bSTA\b\.?', 'SANTA', case=False, regex=True)
-                            .str.replace(r'\bSTO\b\.?', 'SANTO', case=False, regex=True)
-                            .str.upper()
-                        )
-                    else:
-                        df_out[target_col] = df_src[src_col]
-            time.sleep(0.2)
+        progress_bar.progress(35, text="Mapping source columns to template...")
+        # Define mapping: source column -> template column
+        # We need to handle variations in column names
+        col_map = {
+            'ACCOUNT NUMBER': 'account_no',
+            'BANK': 'bank',
+            'PLACEMENT': 'placement',
+            'CH CODE': 'ch_code',
+            'CH NAME': 'ch_name',
+            'ADD TYPE': 'address_type',
+            'ADDRESS': 'address',
+            'MUNICIPALITY': 'municipality',
+            'DL TYPE': 'dl_type',
+            'REF CODE': 'ref_code',
+            'REFERENCE CODE': 'ref_code',  # alternative
+            'AUTOFIELD DATE': 'autofield_date',
+            'PULLOUT DATE': 'pullout_date',
+            'POUT DATE': 'pullout_date',   # alternative
+            'ENDO DATE': 'endorsement_date',
+            'AREA': 'area',
+            'FINAL AREA': 'final_area'
+        }
+        # For each template column, find a matching source column
+        for src_col, target_col in col_map.items():
+            # Try exact match, then case-insensitive
+            matched_col = None
+            for col in df_src.columns:
+                if col.strip().upper() == src_col.strip().upper():
+                    matched_col = col
+                    break
+            if matched_col is not None:
+                if target_col == 'account_no':
+                    df_out[target_col] = df_src[matched_col].astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
+                    df_out[target_col] = df_out[target_col].replace(['nan', 'None', ''], '0')
+                elif target_col == 'address':
+                    df_out[target_col] = (
+                        df_src[matched_col]
+                        .fillna('')
+                        .str.replace('Blk', 'Block', case=False, regex=False)
+                        .str.replace('BRGY', 'BARANGAY', case=False, regex=False)
+                        .str.replace(r'\bSTA\b\.?', 'SANTA', case=False, regex=True)
+                        .str.replace(r'\bSTO\b\.?', 'SANTO', case=False, regex=True)
+                        .str.upper()
+                    )
+                else:
+                    df_out[target_col] = df_src[matched_col]
 
-            progress_bar.progress(60, text="Calculating constants, amounts, and CMS IDs...")
-            is_pif_homeloan = False
+        # If final_area was not mapped, use area
+        if 'final_area' not in df_out.columns or df_out['final_area'].isnull().all():
+            if 'area' in df_out.columns:
+                df_out['final_area'] = df_out['area']
+
+        time.sleep(0.2)
+
+        progress_bar.progress(60, text="Calculating constants, amounts, and CMS IDs...")
+        # --- Determine if this is PIF HOMELOAN (for OTS) ---
+        is_pif_homeloan = False
+        if version == "OTS":
+            is_pif_homeloan = True
+        else:
+            # For MC2, we detect from BANK column
             if not df_src.empty and 'BANK' in df_src.columns:
                 unique_banks = df_src['BANK'].astype(str).str.strip().str.upper().replace({'NAN': ''}).unique()
                 is_pif_homeloan = any('PIF HOMELOAN' in bank for bank in unique_banks)
 
-            ob_column_found = None
-            for col in df_src.columns:
-                col_upper = col.upper().strip()
-                if 'OB' in col_upper and 'PRINCIPAL' in col_upper:
-                    ob_column_found = col
-                    break
-                elif col_upper == 'OB/PRINCIPAL':
-                    ob_column_found = col
-                    break
+        # --- MAP OUTSTANDING BALANCE ---
+        # Look for OB/PRINCIPAL column
+        ob_col = None
+        for col in df_src.columns:
+            col_clean = col.strip().upper()
+            if 'OB' in col_clean and 'PRINCIPAL' in col_clean:
+                ob_col = col
+                break
+            elif col_clean == 'OB/PRINCIPAL':
+                ob_col = col
+                break
+        if ob_col:
+            outstanding_values = df_src[ob_col].astype(str).str.strip()
+            outstanding_values = outstanding_values.str.replace(',', '', regex=False)
 
-            if ob_column_found:
-                outstanding_values = df_src[ob_column_found].astype(str).str.strip()
-                outstanding_values = outstanding_values.str.replace(',', '', regex=False)
+            def format_general_number(val):
+                if val in ['nan', 'None', '', '0', '0.0']:
+                    return '0'
+                try:
+                    num = float(val)
+                    if num == int(num):
+                        return str(int(num))
+                    else:
+                        formatted = f"{num:.2f}"
+                        formatted = formatted.rstrip('0').rstrip('.') if '.' in formatted else formatted
+                        return formatted
+                except ValueError:
+                    return val
+            df_out['outstanding_balance'] = outstanding_values.apply(format_general_number)
+        elif 'CH CODE' in df_src.columns:
+            ch_codes_clean = df_src['CH CODE'].astype(str).str.strip().str.upper()
+            df_out['outstanding_balance'] = ch_codes_clean.map(amounts_ob_mapping).fillna('0')
+        else:
+            df_out['outstanding_balance'] = '0'
 
-                def format_general_number(val):
-                    if val in ['nan', 'None', '', '0', '0.0']:
-                        return '0'
-                    try:
-                        num = float(val)
-                        if num == int(num):
-                            return str(int(num))
-                        else:
-                            formatted = f"{num:.2f}"
-                            formatted = formatted.rstrip('0').rstrip('.') if '.' in formatted else formatted
-                            return formatted
-                    except ValueError:
-                        return val
+        # --- MAP AMOUNT DUE & CMS ID ---
+        if 'CH CODE' in df_src.columns:
+            ch_codes_clean = df_src['CH CODE'].astype(str).str.strip().str.upper()
+            mapped_due = ch_codes_clean.map(amounts_due_mapping).fillna('0')
+            if 'amount_due' in df_out.columns:
+                df_out['amount_due'] = mapped_due
 
-                df_out['outstanding_balance'] = outstanding_values.apply(format_general_number)
-            elif 'CH CODE' in df_src.columns:
-                ch_codes_clean = df_src['CH CODE'].astype(str).str.strip().str.upper()
-                df_out['outstanding_balance'] = ch_codes_clean.map(amounts_ob_mapping).fillna('0')
-            else:
-                df_out['outstanding_balance'] = '0'
+            df_out['cms_id'] = ch_codes_clean.map(cms_mapping).fillna('')
 
-            if 'CH CODE' in df_src.columns:
-                ch_codes_clean = df_src['CH CODE'].astype(str).str.strip().str.upper()
-                mapped_due = ch_codes_clean.map(amounts_due_mapping).fillna('0')
-                if 'amount_due' in df_out.columns:
-                    df_out['amount_due'] = mapped_due
-                df_out['cms_id'] = ch_codes_clean.map(cms_mapping).fillna('')
-                if is_pif_homeloan:
-                    blank_cms_mask = df_out['cms_id'] == ''
-                    if blank_cms_mask.any():
-                        missing_ch_codes = sorted(set(df_src.loc[blank_cms_mask, 'CH CODE'].astype(str).str.strip()))
-                        progress_bar.empty()
-                        st.session_state.process_confirm = False
-                        st.error(
-                            f"🚨 **PROCESS HALTED:** Found {blank_cms_mask.sum()} PIF HOMELOAN row(s) with a blank CMS ID.\n\n"
-                            f"**Missing CH CODE(s):** {', '.join(missing_ch_codes)}\n\n"
-                            f"Please update your 'cmd_id.xlsx' reference file and try again."
-                        )
-                        st.stop()
+            # For OTS (and for MC2 if PIF HOMELOAN), enforce CMS ID not blank
+            if is_pif_homeloan:
+                blank_cms_mask = df_out['cms_id'] == ''
+                if blank_cms_mask.any():
+                    missing_ch_codes = sorted(set(df_src.loc[blank_cms_mask, 'CH CODE'].astype(str).str.strip()))
+                    progress_bar.empty()
+                    st.session_state.process_confirm = False
+                    st.error(
+                        f"🚨 **PROCESS HALTED:** Found {blank_cms_mask.sum()} PIF HOMELOAN row(s) with a blank CMS ID.\n\n"
+                        f"**Missing CH CODE(s):** {', '.join(missing_ch_codes)}\n\n"
+                        f"Please update your 'cmd_id.xlsx' reference file and try again."
+                    )
+                    st.stop()
 
-            df_out['shared_or_exclusive'] = "SHARED"
-            if st.session_state.is_multiple_files:
+        df_out['shared_or_exclusive'] = "SHARED"
+
+        # --- SET TYPE OF ACCOUNT AND VISIT TYPE based on version ---
+        if version == "MC2":
+            # use auto-assigned from file name
+            if is_multiple:
                 df_out['type_of_account'] = df_src['_FILE_ASSIGNED_TYPE']
             else:
-                df_out['type_of_account'] = st.session_state.selected_type
+                # if only one file, we might still have _FILE_ASSIGNED_TYPE
+                if '_FILE_ASSIGNED_TYPE' in df_src.columns:
+                    df_out['type_of_account'] = df_src['_FILE_ASSIGNED_TYPE']
+                else:
+                    # fallback: default to DL
+                    df_out['type_of_account'] = "DL"
+        elif version == "FCL":
+            df_out['type_of_account'] = "DL"
+        elif version == "OTS":
+            df_out['type_of_account'] = "Trans/Details"
 
-            df_out['month'] = datetime.now().strftime('%B').upper()
-            df_out['account_type'] = "HOUSING"
-            df_out['form_code'] = "vid04qNT"
-
-            if 'FINAL AREA' in df_src.columns:
-                df_out['final_area'] = df_src['FINAL AREA'].replace('', pd.NA).fillna(df_src['AREA'])
-            else:
-                df_out['final_area'] = df_src['AREA']
-
-            df_out['area_cluster'] = df_src['AREA'].str.strip().str.upper().map(AREA_MAPPING)
-
-            def determine_visit_type(idx, row):
+        # --- VISIT TYPE ---
+        if version == "MC2":
+            # use existing determine_visit_type function that looks at remarks and bank
+            def determine_visit_type_mc2(idx, row):
                 current_type = df_out.at[idx, 'type_of_account']
                 if current_type == "Trans/Details":
                     return "REGULAR"
-                remark = str(row.get('FIELD REMARKS', '')).strip().upper()
-                bank = str(row.get('BANK', '')).strip().upper()
+                remark = str(row.get('REMARKS', '')).strip().upper() if 'REMARKS' in row else ''
+                bank = str(row.get('BANK', '')).strip().upper() if 'BANK' in row else ''
                 if "PIF FORECLOSURE" in bank:
                     return "OTS"
                 regular_banks = ["CBS HOUSING LOAN", "PIF PROVIDENT", "SBF MORTGAGE", "UBP HOME MORTGAGE", "SBC HOME LOAN", "SBF HOMELOAN"]
@@ -487,19 +559,36 @@ if selected_tool == "VRP Mapper":
                 if remark == "CARAVAN":
                     return "CARAVAN"
                 return ""
+            df_out['visit_type'] = [determine_visit_type_mc2(idx, row) for idx, row in df_src.iterrows()]
+        elif version == "FCL":
+            df_out['visit_type'] = "OTS"
+        elif version == "OTS":
+            df_out['visit_type'] = "REGULAR"
 
-            df_out['visit_type'] = [determine_visit_type(idx, row) for idx, row in df_src.iterrows()]
+        # --- COMMON FIELDS ---
+        df_out['month'] = datetime.now().strftime('%B').upper()
+        df_out['account_type'] = "HOUSING"
+        df_out['form_code'] = "vid04qNT"
 
-            progress_bar.progress(80, text="Formatting dates...")
-            date_fields = ['autofield_date', 'endorsement_date', 'pullout_date']
-            for field in date_fields:
+        # area_cluster
+        if 'AREA' in df_src.columns:
+            df_out['area_cluster'] = df_src['AREA'].str.strip().str.upper().map(AREA_MAPPING)
+        else:
+            df_out['area_cluster'] = ""
+
+        progress_bar.progress(80, text="Formatting dates...")
+        date_fields = ['autofield_date', 'endorsement_date', 'pullout_date']
+        for field in date_fields:
+            if field in df_out.columns:
                 df_out[field] = pd.to_datetime(df_out[field], errors='coerce').dt.strftime('%d-%m-%Y')
                 df_out[field] = df_out[field].fillna('')
-            time.sleep(0.2)
+        time.sleep(0.2)
 
-            progress_bar.progress(95, text="Generating final files...")
-            total_accounts = len(df_out)
-            if not df_src.empty:
+        progress_bar.progress(95, text="Generating final files...")
+        total_accounts = len(df_out)
+        # Generate filename based on version and bank info
+        if version == "MC2":
+            if not df_src.empty and 'BANK' in df_src.columns:
                 unique_banks = df_src['BANK'].astype(str).str.strip().str.upper().replace({'NAN': ''}).unique()
                 unique_banks = [b for b in unique_banks if b]
                 if len(unique_banks) == 1 and unique_banks[0] == "PIF HOMELOAN":
@@ -510,22 +599,36 @@ if selected_tool == "VRP Mapper":
                     bank_val = "MC2 OTHERS"
             else:
                 bank_val = "FILTERED"
+        elif version == "FCL":
+            bank_val = "FCL"
+        else:  # OTS
+            bank_val = "OTS"
 
-            st.session_state.generated_filename = f"{bank_val}_{total_accounts}.csv"
-            st.session_state.release_filename = f"Released_to_{bank_val}_{total_accounts}.csv"
-            st.session_state.processed_data = df_out
+        st.session_state.generated_filename = f"{bank_val}_{total_accounts}.csv"
+        st.session_state.release_filename = f"Released_to_{bank_val}_{total_accounts}.csv"
+        st.session_state.processed_data = df_out
 
-            df_rel = pd.DataFrame()
-            df_rel['REF CODE'] = df_src['REF CODE']
-            df_rel['RELEASED TO'] = df_src['RELEASED TO']
-            st.session_state.release_data = df_rel
+        # RELEASE FILE
+        ref_col_release = None
+        for col in df_src.columns:
+            if col.upper().replace(" ", "") in ['REFCODE', 'REFERENCE CODE', 'REF CODE']:
+                ref_col_release = col
+                break
+        df_rel = pd.DataFrame()
+        if ref_col_release:
+            df_rel['REF CODE'] = df_src[ref_col_release]
+        else:
+            df_rel['REF CODE'] = ""
+        df_rel['RELEASED TO'] = ""  # placeholder, can be filled later
+        st.session_state.release_data = df_rel
 
-            progress_bar.progress(100, text="Done!")
-            elapsed = time.time() - start_time
-            progress_bar.empty()
-            st.success(f"✅ Processed {total_accounts} accounts in {elapsed:.2f} seconds.")
-            play_completion_sound()
+        progress_bar.progress(100, text="Done!")
+        elapsed = time.time() - start_time
+        progress_bar.empty()
+        st.success(f"✅ Processed {total_accounts} accounts in {elapsed:.2f} seconds.")
+        play_completion_sound()
 
+    # Display results if data exists
     if st.session_state.processed_data is not None:
         df_out = st.session_state.processed_data
         df_release = st.session_state.release_data
