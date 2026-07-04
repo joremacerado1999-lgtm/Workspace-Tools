@@ -75,8 +75,6 @@ st.markdown(
         transform: translateY(0px) scale(0.98);
         box-shadow: 0 2px 6px rgba(0,0,0,0.1);
     }
-    /* ----- Progress Bar: DEFAULT (no custom styling) ----- */
-    /* Removed custom .stProgress rules to use Streamlit's default */
 
     /* Dark theme overrides */
     [data-theme="dark"] .stButton > button,
@@ -132,24 +130,9 @@ st.markdown(
         background: #2d2d2d;
         border-color: #555;
     }
-    [data-theme="dark"] .card {
-        background: #1e1e1e;
-        border-color: #333;
-        box-shadow: 0 6px 24px rgba(0,0,0,0.3);
-    }
     [data-theme="dark"] .stSidebar {
         background: #1e1e1edd;
         border-right: 1px solid #333;
-    }
-    /* Card containers (light) */
-    .card {
-        background: white;
-        border-radius: 20px;
-        padding: 1.8rem;
-        box-shadow: 0 6px 24px rgba(0,0,0,0.05);
-        border: 1px solid rgba(255,255,255,0.3);
-        backdrop-filter: blur(2px);
-        margin-bottom: 1.5rem;
     }
     .center-box {
         max-width: 600px;
@@ -243,7 +226,6 @@ st.sidebar.info("Select a tool from the menu above to get started.")
 # ==========================================
 if selected_tool == "VRP Mapper":
     st.title("🚀 VRP Mapper")
-    st.markdown('<div class="card">', unsafe_allow_html=True)
 
     # --- 1. SETTINGS & TEMPLATE ---
     template_filename = 'demand_letter_template.csv'
@@ -582,15 +564,12 @@ if selected_tool == "VRP Mapper":
         st.subheader("📑 Release File Preview")
         st.dataframe(df_release.head(10))
 
-    st.markdown('</div>', unsafe_allow_html=True)
-
 
 # ==========================================
 # TOOL 2: FIELD RESULT (REPLICATED VBA MACRO)
 # ==========================================
 elif selected_tool == "Field Result":
     st.title("📊 Field Result Column Extractor")
-    st.markdown('<div class="card">', unsafe_allow_html=True)
     st.write("Upload an Excel workbook containing a sheet named **'RESULT'** to run the macro extraction.")
 
     excel_file = st.file_uploader("Upload Workbook (.xlsx)", type=['xlsx'], key="field_result_uploader")
@@ -710,15 +689,12 @@ elif selected_tool == "Field Result":
             key="field_result_download"
         )
 
-    st.markdown('</div>', unsafe_allow_html=True)
-
 
 # ==========================================
 # TOOL 3: E-SIGN FIXER
 # ==========================================
 elif selected_tool == "E-SIGN FIXER":
     st.title("✒️ E-SIGN FIXER")
-    st.markdown('<div class="card">', unsafe_allow_html=True)
     st.write("Upload an image page containing multiple sheet signatures to crop them out into isolated transparent files.")
 
     TARGET_SIZE = 250
@@ -827,5 +803,3 @@ elif selected_tool == "E-SIGN FIXER":
 
         except Exception as e:
             st.error(f"❌ Error: {str(e)}")
-
-    st.markdown('</div>', unsafe_allow_html=True)
