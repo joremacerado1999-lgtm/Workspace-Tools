@@ -79,8 +79,11 @@ if 'show_account_type_modal' not in st.session_state:
     st.session_state.show_account_type_modal = False
 if 'process_confirm' not in st.session_state:
     st.session_state.process_confirm = False
+if 'is_multiple_files' not in st.session_state:
+    st.session_state.is_multiple_files = False
 if 'cms_id_warning' not in st.session_state:
     st.session_state.cms_id_warning = None
+    
 # Field Result session state
 if 'field_result_buffer' not in st.session_state:
     st.session_state.field_result_buffer = None
@@ -96,6 +99,7 @@ def reset_app():
     st.session_state.selected_type = None
     st.session_state.show_account_type_modal = False
     st.session_state.process_confirm = False
+    st.session_state.is_multiple_files = False
     st.session_state.cms_id_warning = None
     st.rerun()
 
@@ -202,32 +206,25 @@ if selected_tool == "VRP Mapper":
 
     if src_files:
         df_list = []
-        force_trans_details = False
-        force_dl = False
-        
-        # --- Auto-detect mapping files by name ---
-        def clean_filename(name):
-            return re.sub(r'[\s_]+', ' ', name.strip().upper())
-            
-        TRANS_FILENAME = clean_filename("NEW VRP ACCOUNTS FOR TAG_PIF REVISIT- NO DL_JOREM FOR UPLOAD")
-        DL_FILENAME_1 = clean_filename("NEW VRP ACCOUNTS FOR TAG_PIF WITH DL_JOREM FOR UPLOAD")
-        DL_FILENAME_2 = clean_filename("NEW VRP ACCOUNTS FOR TAG_MC2- OTHERS_JOREM FOR UPLOAD")
         
         for file in src_files:
             df_temp = pd.read_csv(file, dtype=str, keep_default_na=False)
             df_temp.columns = df_temp.columns.str.strip()
+            
+            raw_name = os.path.splitext(file.name)[0].strip().upper()
+            
+            # --- Auto-assign type per file based on naming convention ---
+            file_type = "DL" # Default
+            if "REVISIT" in raw_name and "NO DL" in raw_name:
+                file_type = "Trans/Details"
+            elif "WITH DL" in raw_name:
+                file_type = "DL"
+            elif "MC2" in raw_name and "OTHERS" in raw_name:
+                file_type = "DL"
+                
+            df_temp['_FILE_ASSIGNED_TYPE'] = file_type
             df_list.append(df_temp)
             
-            uploaded_name_clean = clean_filename(os.path.splitext(file.name)[0])
-            
-            # Auto-assign variables based on filename patterns
-            if TRANS_FILENAME in uploaded_name_clean or uploaded_name_clean.startswith(TRANS_FILENAME):
-                force_trans_details = True
-            elif DL_FILENAME_1 in uploaded_name_clean or uploaded_name_clean.startswith(DL_FILENAME_1):
-                force_dl = True
-            elif DL_FILENAME_2 in uploaded_name_clean or uploaded_name_clean.startswith(DL_FILENAME_2):
-                force_dl = True
-        
         # Combine all uploaded files into one master dataframe
         df_master = pd.concat(df_list, ignore_index=True)
         
@@ -236,24 +233,8 @@ if selected_tool == "VRP Mapper":
         col1, col2 = st.columns([1, 1])
         with col1:
             if st.button("✨ Process and Map Data", use_container_width=True):
-                
-                # 1. Check if it's the Trans/Details bypass
-                if force_trans_details and not force_dl:
-                    st.session_state.selected_type = "Trans/Details"
-                    st.session_state.process_confirm = True
-                    st.session_state.show_account_type_modal = False
-                    
-                # 2. Check if it's the new DL bypass
-                elif force_dl and not force_trans_details:
-                    st.session_state.selected_type = "DL"
-                    st.session_state.process_confirm = True
-                    st.session_state.show_account_type_modal = False
-                    
-                # 3. Fallback to showing the manual selection modal
-                else:
-                    st.session_state.show_account_type_modal = True
-                    st.session_state.process_confirm = False
-                    
+                st.session_state.show_account_type_modal = True
+                st.session_state.process_confirm = False
         with col2:
             if st.button("🔄 Reset / Clear All", use_container_width=True):
                 reset_app()
@@ -261,18 +242,27 @@ if selected_tool == "VRP Mapper":
         if st.session_state.show_account_type_modal:
             left, middle, right = st.columns([1, 2, 1])
             with middle:
-                # Wrapped inside st.form to stop the modal from disappearing when selecting an option
+                # Wrapped inside st.form to stop the modal from disappearing when making a selection
                 with st.form(key="account_type_form"):
                     st.markdown("<h3 style='text-align:center'>Select Type of Account</h3>", unsafe_allow_html=True)
                     
-                    if force_trans_details and force_dl:
-                        st.warning("⚠️ Mixed account types detected in uploaded files! Please manually select the type for this batch.")
-                        
-                    selected_type = st.radio("", ["DL", "Trans/Details"], index=0)
+                    is_multiple = len(src_files) > 1
+                    
+                    if is_multiple:
+                        # Show warning and disable the radio button
+                        st.warning("⚠️ Multiple files detected. The account type is disabled and will be automatically assigned based on the file name.")
+                        selected_type = st.radio("Type of Account:", ["DL", "Trans/Details"], index=0, disabled=True)
+                    else:
+                        # Auto-select the default index based on the single file uploaded
+                        first_file_type = df_master['_FILE_ASSIGNED_TYPE'].iloc[0] if not df_master.empty else "DL"
+                        default_idx = 1 if first_file_type == "Trans/Details" else 0
+                        selected_type = st.radio("Type of Account:", ["DL", "Trans/Details"], index=default_idx, disabled=False)
+                    
                     submit_btn = st.form_submit_button("Process Now", type="primary", use_container_width=True)
                     
                     if submit_btn:
                         st.session_state.selected_type = selected_type
+                        st.session_state.is_multiple_files = is_multiple
                         st.session_state.process_confirm = True
                         st.session_state.show_account_type_modal = False
                         st.rerun()
@@ -280,8 +270,6 @@ if selected_tool == "VRP Mapper":
         if st.session_state.process_confirm:
             progress_bar = st.progress(0, text="Initializing processing...")
             time.sleep(0.2)
-            
-            selected_type = st.session_state.selected_type
             
             progress_bar.progress(15, text="Filtering target codes...")
             if pasted_codes.strip():
@@ -332,7 +320,6 @@ if selected_tool == "VRP Mapper":
                 is_pif_homeloan = any('PIF HOMELOAN' in bank for bank in unique_banks)
             
             # --- MAP OUTSTANDING BALANCE ---
-            # First, try to get OB/PRINCIPAL directly from the uploaded file
             ob_column_found = None
             for col in df_src.columns:
                 col_upper = col.upper().strip()
@@ -344,26 +331,18 @@ if selected_tool == "VRP Mapper":
                     break
             
             if ob_column_found:
-                # Convert to string first to avoid scientific notation issues
                 outstanding_values = df_src[ob_column_found].astype(str).str.strip()
-                
-                # Remove commas and any whitespace
                 outstanding_values = outstanding_values.str.replace(',', '', regex=False)
                 
-                # Convert to float first to handle scientific notation, then format as general number
                 def format_general_number(val):
                     if val in ['nan', 'None', '', '0', '0.0']:
                         return '0'
                     try:
-                        # Convert to float (handles scientific notation like 5.03478391e+06)
                         num = float(val)
-                        # If it's a whole number, don't show decimals
                         if num == int(num):
                             return str(int(num))
                         else:
-                            # Format with 2 decimal places, but remove trailing zeros
                             formatted = f"{num:.2f}"
-                            # Remove trailing zeros after decimal
                             formatted = formatted.rstrip('0').rstrip('.') if '.' in formatted else formatted
                             return formatted
                     except ValueError:
@@ -372,26 +351,21 @@ if selected_tool == "VRP Mapper":
                 df_out['outstanding_balance'] = outstanding_values.apply(format_general_number)
                 
             elif 'CH CODE' in df_src.columns:
-                # Fallback to amounts.csv mapping if no OB/PRINCIPAL column in uploaded file
                 ch_codes_clean = df_src['CH CODE'].astype(str).str.strip().str.upper()
                 df_out['outstanding_balance'] = ch_codes_clean.map(amounts_ob_mapping).fillna('0')
             else:
                 df_out['outstanding_balance'] = '0'
             
-            # --- MAP AMOUNT DUE ---
+            # --- MAP AMOUNT DUE & CMS ID ---
             if 'CH CODE' in df_src.columns:
                 ch_codes_clean = df_src['CH CODE'].astype(str).str.strip().str.upper()
                 
-                # Fetch amount due from amounts.csv mapping dictionary
                 mapped_due = ch_codes_clean.map(amounts_due_mapping).fillna('0')
-                
                 if 'amount_due' in df_out.columns:
                     df_out['amount_due'] = mapped_due
                 
-                # --- CMS ID Mapping ---
                 df_out['cms_id'] = ch_codes_clean.map(cms_mapping).fillna('')
                 
-                # Only halt for PIF HOMELOAN if CMS ID is blank
                 if is_pif_homeloan:
                     blank_cms_mask = df_out['cms_id'] == ''
                     if blank_cms_mask.any():
@@ -407,7 +381,13 @@ if selected_tool == "VRP Mapper":
                         st.stop()
 
             df_out['shared_or_exclusive'] = "SHARED"
-            df_out['type_of_account'] = selected_type
+            
+            # Assigning type of account (Dynamic based on multi-select or single-select)
+            if st.session_state.is_multiple_files:
+                df_out['type_of_account'] = df_src['_FILE_ASSIGNED_TYPE']
+            else:
+                df_out['type_of_account'] = st.session_state.selected_type
+                
             df_out['month'] = datetime.now().strftime('%B').upper()
             df_out['account_type'] = "HOUSING"
             df_out['form_code'] = "vid04qNT"
@@ -419,8 +399,10 @@ if selected_tool == "VRP Mapper":
             
             df_out['area_cluster'] = df_src['AREA'].str.strip().str.upper().map(AREA_MAPPING)
 
-            def determine_visit_type(row):
-                if selected_type == "Trans/Details":
+            def determine_visit_type(idx, row):
+                # Fetch the exact account type applied to this row
+                current_type = df_out.at[idx, 'type_of_account']
+                if current_type == "Trans/Details":
                     return "REGULAR"
                 
                 remark = str(row.get('FIELD REMARKS', '')).strip().upper()
@@ -441,7 +423,7 @@ if selected_tool == "VRP Mapper":
                 
                 return ""
                 
-            df_out['visit_type'] = df_src.apply(determine_visit_type, axis=1)
+            df_out['visit_type'] = [determine_visit_type(idx, row) for idx, row in df_src.iterrows()]
 
             progress_bar.progress(80, text="Formatting dates...")
             date_fields = ['autofield_date', 'endorsement_date', 'pullout_date']
