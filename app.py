@@ -1,14 +1,14 @@
 # --- EXTERNAL LIBRARIES ---
 import streamlit as st # type: ignore
 import pandas as pd # type: ignore
-import numpy as np
-import cv2
-from PIL import Image
-import openpyxl
-from openpyxl.styles import Font
-from openpyxl.utils import get_column_letter
-from docx import Document
-from docx.shared import Inches
+import numpy as np # type: ignore
+import cv2 # type: ignore
+from PIL import Image # type: ignore
+import openpyxl # type: ignore
+from openpyxl.styles import Font # type: ignore
+from openpyxl.utils import get_column_letter # type: ignore
+from docx import Document # type: ignore
+from docx.shared import Inches # type: ignore
 
 # --- PYTHON STANDARD LIBRARY ---
 import os
@@ -197,26 +197,44 @@ if selected_tool == "VRP Mapper":
     st.divider()
 
     # --- INPUT SECTION ---
-    src_file = st.file_uploader("Upload VRP ACCOUNTS CSV", type=['csv'], key=f"uploader_{st.session_state.uploader_key}")
+    # Updated to accept multiple files
+    src_files = st.file_uploader("Upload VRP ACCOUNTS CSV(s)", type=['csv'], accept_multiple_files=True, key=f"uploader_{st.session_state.uploader_key}")
 
-    if src_file:
-        df_master = pd.read_csv(src_file, dtype=str, keep_default_na=False)
-        df_master.columns = df_master.columns.str.strip()
+    if src_files:
+        df_list = []
+        force_trans_details = False
         
         # --- Auto-detect the Trans/Details-only mapping file by name ---
-        TRANS_DETAILS_ONLY_FILENAME = "NEW VRP ACCOUNTS FOR TAG_PIF REVISIT- NO DL_JOREM"
-        uploaded_name_clean = re.sub(r'[\s_]+', ' ', os.path.splitext(src_file.name)[0].strip().upper())
+        TRANS_DETAILS_ONLY_FILENAME = "NEW VRP ACCOUNTS FOR TAG_PIF REVISIT- NO DL_JOREM FOR UPLOAD"
         target_name_clean = re.sub(r'[\s_]+', ' ', TRANS_DETAILS_ONLY_FILENAME.strip().upper())
-    
-        force_trans_details = uploaded_name_clean.startswith(target_name_clean)
+        
+        for file in src_files:
+            df_temp = pd.read_csv(file, dtype=str, keep_default_na=False)
+            df_temp.columns = df_temp.columns.str.strip()
+            df_list.append(df_temp)
+            
+            uploaded_name_clean = re.sub(r'[\s_]+', ' ', os.path.splitext(file.name)[0].strip().upper())
+            
+            # If ANY uploaded file matches the target name, we force Trans/Details
+            if target_name_clean in uploaded_name_clean or uploaded_name_clean.startswith(target_name_clean):
+                force_trans_details = True
+        
+        # Combine all uploaded files into one master dataframe
+        df_master = pd.concat(df_list, ignore_index=True)
         
         pasted_codes = st.text_area("Paste Reference Codes (Optional filter - one per line):", height=150)
         
         col1, col2 = st.columns([1, 1])
         with col1:
             if st.button("✨ Process and Map Data", use_container_width=True):
-                st.session_state.show_account_type_modal = True
-                st.session_state.process_confirm = False
+                # Bypass modal entirely if the specific Trans/Details file is detected
+                if force_trans_details:
+                    st.session_state.selected_type = "Trans/Details"
+                    st.session_state.process_confirm = True
+                    st.session_state.show_account_type_modal = False
+                else:
+                    st.session_state.show_account_type_modal = True
+                    st.session_state.process_confirm = False
         with col2:
             if st.button("🔄 Reset / Clear All", use_container_width=True):
                 reset_app()
@@ -225,12 +243,10 @@ if selected_tool == "VRP Mapper":
             left, middle, right = st.columns([1, 2, 1])
             with middle:
                 st.markdown("<h3 style='text-align:center'>Select Type of Account</h3>", unsafe_allow_html=True)
-                if force_trans_details:
-                    st.caption("ℹ️ Recognized Trans/Details-only file — pre-selected below.")
                 selected_type = st.radio(
                     "", ["DL", "Trans/Details"],
-                    index=1 if force_trans_details else 0,
-                    key=f"account_type_radio_{uploaded_name_clean}"
+                    index=0,
+                    key="account_type_radio_multi"
                 )
                 if st.button("Process Now", type="primary", use_container_width=True):
                     st.session_state.selected_type = selected_type
@@ -644,7 +660,7 @@ elif selected_tool == "E-SIGN FIXER":
             
             progress_bar.progress(50, text="Extracting signatures...")
             time.sleep(0.25)
-            
+
             contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
             contours = sorted(contours, key=lambda c: (cv2.boundingRect(c)[1], cv2.boundingRect(c)[0]))
             
@@ -657,7 +673,7 @@ elif selected_tool == "E-SIGN FIXER":
                 area = cv2.contourArea(cnt)
                 if area < 1000:
                     continue
-                    
+                  
                 x, y, w, h = cv2.boundingRect(cnt)
                 padding = 15
                 
@@ -672,7 +688,7 @@ elif selected_tool == "E-SIGN FIXER":
                 
                 if len(xs) == 0 or len(ys) == 0:
                     continue
-                    
+                 
                 crop = crop[ys.min():ys.max() + 1, xs.min():xs.max() + 1]
                 mask = mask[ys.min():ys.max() + 1, xs.min():xs.max() + 1]
                 
@@ -687,7 +703,7 @@ elif selected_tool == "E-SIGN FIXER":
                 y_offset = (max_dim - h_sig) // 2
                 x_offset = (max_dim - w_sig) // 2
                 square_canvas[y_offset:y_offset+h_sig, x_offset:x_offset+w_sig] = rgba
-                
+               
                 final_sig = cv2.resize(square_canvas, (TARGET_SIZE, TARGET_SIZE), interpolation=cv2.INTER_AREA)
                 extracted_signatures.append(final_sig)
             
