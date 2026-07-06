@@ -382,6 +382,7 @@ if selected_tool == "VRP Mapper":
                 elif "MC2" in raw_name and "OTHERS" in raw_name:
                     file_type = "DL"
                 df_temp['_FILE_ASSIGNED_TYPE'] = file_type
+                df_temp['_FILE_RAW_NAME'] = raw_name          # <--- NEW: store filename
                 df_list.append(df_temp)
             df_master = pd.concat(df_list, ignore_index=True)
             is_multiple = True
@@ -561,6 +562,11 @@ if selected_tool == "VRP Mapper":
 
         if version == "MC2":
             def determine_visit_type_mc2(idx, row):
+                # Force REGULAR for specific file patterns
+                file_name = str(row.get('_FILE_RAW_NAME', '')).upper()
+                if any(pattern in file_name for pattern in ["TAG_PIF WITH DL", "TAG_PIF REVISIT- NO DL", "TAG_MC2- OTHERS"]):
+                    return "REGULAR"
+                
                 current_type = df_out.at[idx, 'type_of_account']
                 if current_type == "Trans/Details":
                     return "REGULAR"
@@ -641,6 +647,12 @@ if selected_tool == "VRP Mapper":
             for col in df_src.columns:
                 col_clean = col.strip().upper().replace(" ", "").replace("_", "")
                 if col_clean == 'TAGFM':
+                    released_to_col = col
+                    break
+        else:   # For MC2, try to find a column that likely holds the released‑to information
+            for col in df_src.columns:
+                col_clean = col.strip().upper().replace(" ", "").replace("_", "")
+                if col_clean in ['TAGFM', 'RELEASEDTO', 'TAG']:
                     released_to_col = col
                     break
 
