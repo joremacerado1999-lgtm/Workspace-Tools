@@ -1,14 +1,14 @@
 # --- EXTERNAL LIBRARIES ---
-import streamlit as st # type: ignore
-import pandas as pd # type: ignore
-import numpy as np # type: ignore
-import cv2 # type: ignore
-from PIL import Image # type: ignore
-import openpyxl # type: ignore
-from openpyxl.styles import Font # type: ignore
-from openpyxl.utils import get_column_letter # type: ignore
-from docx import Document # type: ignore
-from docx.shared import Inches # type: ignore
+import streamlit as st  # type: ignore
+import pandas as pd  # type: ignore
+import numpy as np  # type: ignore
+import cv2  # type: ignore
+from PIL import Image  # type: ignore
+import openpyxl  # type: ignore
+from openpyxl.styles import Font  # type: ignore
+from openpyxl.utils import get_column_letter  # type: ignore
+from docx import Document  # type: ignore
+from docx.shared import Inches  # type: ignore
 
 # --- PYTHON STANDARD LIBRARY ---
 import os
@@ -27,6 +27,8 @@ st.set_page_config(page_title="Workspace Tools", page_icon="🧰", layout="wide"
 # ========== SESSION STATE INIT ==========
 if 'entered' not in st.session_state:
     st.session_state.entered = False  # Show welcome page initially
+if 'pasted_codes_input' not in st.session_state:
+    st.session_state.pasted_codes_input = ""  # for resetting the text area
 
 # ========== WELCOME PAGE ==========
 if not st.session_state.entered:
@@ -41,24 +43,24 @@ if not st.session_state.entered:
             padding: 2rem 4rem;
         }
         .welcome-card {
-            background: white;
             border-radius: 30px;
             padding: 3rem 4rem;
             box-shadow: 0 20px 60px rgba(0,0,0,0.08);
             text-align: center;
             max-width: 700px;
             margin: 5rem auto;
-            border: 1px solid rgba(255,255,255,0.3);
+            border: 1px solid rgba(0,0,0,0.05);
+            background: var(--background-color);
         }
         .welcome-title {
             font-size: 3.2rem;
             font-weight: 700;
-            color: #1e2a3a;
+            color: var(--text-color);
             margin-bottom: 0.5rem;
         }
         .welcome-sub {
             font-size: 1.2rem;
-            color: #4a5a6a;
+            color: var(--text-color-secondary);
             margin-bottom: 2rem;
         }
         .welcome-emoji {
@@ -104,8 +106,7 @@ if not st.session_state.entered:
             st.rerun()
     st.stop()
 
-
-# ========== MINIMAL STYLING (button animations & dropdown visibility) ==========
+# ========== BUTTON ANIMATION STYLING (kept) ==========
 st.markdown(
     """
     <style>
@@ -130,40 +131,6 @@ st.markdown(
         0% { transform: translateY(-4px) scale(1); }
         50% { transform: translateY(-4px) scale(1.03); }
         100% { transform: translateY(-4px) scale(1); }
-    }
-
-    /* Dropdown & text area – white background for readability */
-    .stSelectbox div[data-baseweb="select"] {
-        background-color: #ffffff !important;
-        border-radius: 8px;
-        border: 1px solid #d0d9e8;
-    }
-    .stSelectbox div[data-baseweb="select"] > div {
-        background-color: #ffffff !important;
-        color: #1e2a3a !important;
-    }
-    .stSelectbox ul {
-        background-color: #ffffff !important;
-    }
-    .stSelectbox li {
-        color: #1e2a3a !important;
-    }
-    .stTextArea textarea {
-        background-color: #ffffff !important;
-        color: #1e2a3a !important;
-        border-radius: 8px;
-        border: 1px solid #d0d9e8;
-    }
-    .stTextArea textarea:focus {
-        border-color: #2e7d32;
-        box-shadow: 0 0 0 2px rgba(46, 125, 50, 0.2);
-    }
-
-    /* Sidebar subtle style (optional) */
-    .stSidebar {
-        background: #ffffffdd;
-        backdrop-filter: blur(4px);
-        border-right: 1px solid rgba(0,0,0,0.05);
     }
     </style>
     """,
@@ -236,6 +203,7 @@ def reset_app():
     st.session_state.process_confirm = False
     st.session_state.is_multiple_files = False
     st.session_state.cms_id_warning = None
+    st.session_state.pasted_codes_input = ""   # clear the text area
     st.rerun()
 
 # ========== SIDEBAR ==========
@@ -352,8 +320,12 @@ if selected_tool == "VRP Mapper":
             key=f"uploader_{st.session_state.uploader_key}"
         )
 
-    # Optional filter (pasted codes) - works for all versions
-    pasted_codes = st.text_area("Paste Reference Codes (Optional filter - one per line):", height=150)
+    # Optional filter (pasted codes) - now with a key for resetting
+    pasted_codes = st.text_area(
+        "Paste Reference Codes (Optional filter - one per line):",
+        height=150,
+        key="pasted_codes_input"
+    )
 
     col1, col2 = st.columns([1, 1])
     with col1:
