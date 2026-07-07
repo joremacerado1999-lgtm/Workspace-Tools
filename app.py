@@ -203,7 +203,9 @@ def reset_app():
     st.session_state.process_confirm = False
     st.session_state.is_multiple_files = False
     st.session_state.cms_id_warning = None
-    st.session_state.pasted_codes_input = ""   # clear the text area
+    # Clear pasted codes text area safely
+    if 'pasted_codes_input' in st.session_state:
+        st.session_state.pasted_codes_input = ""
     st.rerun()
 
 # ========== SIDEBAR ==========
