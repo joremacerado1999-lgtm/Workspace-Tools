@@ -195,7 +195,9 @@ if 'field_result_elapsed' not in st.session_state:
     st.session_state.field_result_elapsed = 0.0
 
 def reset_app():
+    # Increment uploader key to reset file uploader
     st.session_state.uploader_key += 1
+    # Clear all processed data and flags
     st.session_state.processed_data = None
     st.session_state.release_data = None
     st.session_state.selected_type = None
@@ -204,8 +206,7 @@ def reset_app():
     st.session_state.is_multiple_files = False
     st.session_state.cms_id_warning = None
     # Clear pasted codes text area safely
-    if 'pasted_codes_input' in st.session_state:
-        st.session_state.pasted_codes_input = ""
+    st.session_state.pop('pasted_codes_input', None)  # remove key, widget will reset to default
     st.rerun()
 
 # ========== SIDEBAR ==========
