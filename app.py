@@ -193,6 +193,8 @@ if 'field_result_processed' not in st.session_state:
     st.session_state.field_result_processed = False
 if 'field_result_elapsed' not in st.session_state:
     st.session_state.field_result_elapsed = 0.0
+if 'field_result_extra_csv' not in st.session_state:
+    st.session_state.field_result_extra_csv = None
 
 def reset_app():
     # Increment uploader key to reset file uploader
@@ -689,114 +691,136 @@ elif selected_tool == "Field Result":
     st.title("📊 Field Result Column Extractor")
     st.write("Upload an Excel workbook containing a sheet named **'RESULT'** to run the macro extraction.")
 
+    # ===== FIXED COLUMN INDICES (0‑based) =====
+    # ⚠️ PLEASE SET THE CORRECT COLUMN INDEX FOR YOUR REFERENCE CODE
+    # Column AA = 26, Column AP = 41, etc.
+    REF_CODE_COL = 41          # Currently set to AP – CHANGE THIS to your actual Ref Code column
+    FIELD_NAME_COL = 26        # Column AA – keep as is for Field Name
+    # ===========================================
+
     excel_file = st.file_uploader("Upload Workbook (.xlsx)", type=['xlsx'], key="field_result_uploader")
 
-    if excel_file and st.button("🔄 Process Field Result", use_container_width=True):
-        start_time = time.time()
-        try:
-            progress_bar = st.progress(0, text="Reading Excel file...")
-            xl_file = pd.ExcelFile(excel_file)
-            sheet_names = xl_file.sheet_names
-            target_sheet = next((sheet for sheet in sheet_names if sheet.upper() == "RESULT"), None)
+    if excel_file:
+        if st.button("🔄 Process Field Result", use_container_width=True):
+            start_time = time.time()
+            try:
+                progress_bar = st.progress(0, text="Reading Excel file...")
+                xl_file = pd.ExcelFile(excel_file)
+                target_sheet = next((sheet for sheet in xl_file.sheet_names if sheet.upper() == "RESULT"), None)
 
-            if not target_sheet:
-                progress_bar.empty()
-                st.error("❌ Error: A sheet named 'RESULT' was not found in this workbook.")
-                st.session_state.field_result_processed = False
-            else:
-                progress_bar.progress(25, text="Extracting relevant columns...")
-                time.sleep(0.2)
+                if not target_sheet:
+                    progress_bar.empty()
+                    st.error("❌ Error: A sheet named 'RESULT' was not found in this workbook.")
+                    st.session_state.field_result_processed = False
+                else:
+                    progress_bar.progress(25, text="Extracting relevant columns...")
+                    time.sleep(0.2)
 
-                df_source = pd.read_excel(excel_file, sheet_name=target_sheet, header=None, dtype=str)
-                max_required_col_idx = 41
-                if df_source.shape[1] <= max_required_col_idx:
-                    for i in range(df_source.shape[1], max_required_col_idx + 1):
-                        df_source[i] = ""
+                    # Read the whole sheet without header to keep raw data
+                    df_source = pd.read_excel(excel_file, sheet_name=target_sheet, header=None, dtype=str)
+                    # Ensure enough columns
+                    max_needed = max(41, FIELD_NAME_COL, REF_CODE_COL) + 1
+                    if df_source.shape[1] <= max_needed:
+                        for i in range(df_source.shape[1], max_needed + 1):
+                            df_source[i] = ""
 
-                df_target = pd.DataFrame()
-                df_target[0] = df_source[41]
-                df_target[1] = df_source[2]
-                df_target[2] = df_source[3]
-                df_target[3] = df_source[4]
-                df_target[4] = df_source[27]
-                df_target[5] = df_source[32]
-                df_target[6] = df_source[36]
+                    # --- 1. Extract the 7 original columns (macro indices) ---
+                    df_target = pd.DataFrame()
+                    df_target[0] = df_source[41]   # Column AP (macro column 41)
+                    df_target[1] = df_source[2]
+                    df_target[2] = df_source[3]
+                    df_target[3] = df_source[4]
+                    df_target[4] = df_source[27]
+                    df_target[5] = df_source[32]
+                    df_target[6] = df_source[36]
 
-                progress_bar.progress(50, text="Converting dates to native objects...")
-                time.sleep(0.2)
+                    # --- 2. Add Field Name (AA) as last column ---
+                    df_target[7] = df_source[FIELD_NAME_COL]
 
-                def format_field_result_date(val):
-                    if pd.isna(val):
-                        return val
-                    val_str = str(val).strip()
-                    if re.match(r'^\d{4}-\d{2}-\d{2}( \d{2}:\d{2}:\d{2}(\.\d+)?)?$', val_str) or \
-                       re.match(r'^\d{1,2}/\d{1,2}/\d{4}( \d{2}:\d{2}:\d{2}(\.\d+)?)?$', val_str):
-                        try:
-                            return pd.to_datetime(val_str).date()
-                        except:
+                    # --- 3. Build the extra CSV with Ref Code and Field Name ---
+                    # Skip the first row (which likely contains column headers)
+                    df_source_data = df_source.iloc[1:].reset_index(drop=True)
+                    df_csv_extra = pd.DataFrame({
+                        'Ref Code': df_source_data[REF_CODE_COL],
+                        'Field Name': df_source_data[FIELD_NAME_COL]
+                    })
+
+                    progress_bar.progress(50, text="Converting dates to native objects...")
+                    time.sleep(0.2)
+
+                    def format_field_result_date(val):
+                        if pd.isna(val):
                             return val
-                    return val
+                        val_str = str(val).strip()
+                        if re.match(r'^\d{4}-\d{2}-\d{2}( \d{2}:\d{2}:\d{2}(\.\d+)?)?$', val_str) or \
+                           re.match(r'^\d{1,2}/\d{1,2}/\d{4}( \d{2}:\d{2}:\d{2}(\.\d+)?)?$', val_str):
+                            try:
+                                return pd.to_datetime(val_str).date()
+                            except:
+                                return val
+                        return val
 
-                for col in df_target.columns:
-                    df_target[col] = df_target[col].apply(format_field_result_date)
+                    for col in df_target.columns:
+                        df_target[col] = df_target[col].apply(format_field_result_date)
 
-                progress_bar.progress(75, text="Generating stylized Excel with mm/dd/yyyy format...")
-                time.sleep(0.2)
+                    progress_bar.progress(75, text="Generating stylized Excel with mm/dd/yyyy format...")
+                    time.sleep(0.2)
 
-                wb_out = openpyxl.Workbook()
-                ws_out = wb_out.active
-                ws_out.title = "RESULT"
-                calibri_font = Font(name="Calibri", size=9)
+                    wb_out = openpyxl.Workbook()
+                    ws_out = wb_out.active
+                    ws_out.title = "RESULT"
+                    calibri_font = Font(name="Calibri", size=9)
 
-                for r_idx, row_values in enumerate(df_target.values):
-                    for c_idx, cell_value in enumerate(row_values):
-                        if isinstance(cell_value, (date, datetime)):
-                            formatted_text_value = cell_value.strftime('%m/%d/%Y')
-                        else:
-                            formatted_text_value = cell_value
-                        cell = ws_out.cell(row=r_idx + 1, column=c_idx + 1, value=formatted_text_value)
-                        cell.font = calibri_font
+                    for r_idx, row_values in enumerate(df_target.values):
+                        for c_idx, cell_value in enumerate(row_values):
+                            if isinstance(cell_value, (date, datetime)):
+                                formatted_text_value = cell_value.strftime('%m/%d/%Y')
+                            else:
+                                formatted_text_value = cell_value
+                            cell = ws_out.cell(row=r_idx + 1, column=c_idx + 1, value=formatted_text_value)
+                            cell.font = calibri_font
 
-                for col in ws_out.columns:
-                    max_len = 0
-                    col_letter = get_column_letter(col[0].column)
-                    for cell in col:
-                        if cell.value is not None:
-                            max_len = max(max_len, len(str(cell.value)))
-                    ws_out.column_dimensions[col_letter].width = max(max_len + 3, 10)
+                    for col in ws_out.columns:
+                        max_len = 0
+                        col_letter = get_column_letter(col[0].column)
+                        for cell in col:
+                            if cell.value is not None:
+                                max_len = max(max_len, len(str(cell.value)))
+                        ws_out.column_dimensions[col_letter].width = max(max_len + 3, 10)
 
-                current_date_str = datetime.now().strftime('%m-%d-%Y')
-                generated_fn = f"FIELD RESULT {current_date_str}.xlsx"
+                    current_date_str = datetime.now().strftime('%m-%d-%Y')
+                    generated_fn = f"FIELD RESULT {current_date_str}.xlsx"
 
-                output_buffer = io.BytesIO()
-                wb_out.save(output_buffer)
-                output_buffer.seek(0)
+                    output_buffer = io.BytesIO()
+                    wb_out.save(output_buffer)
+                    output_buffer.seek(0)
 
-                st.session_state.field_result_buffer = output_buffer
-                st.session_state.field_result_filename = generated_fn
-                st.session_state.field_result_processed = True
-                elapsed = time.time() - start_time
-                st.session_state.field_result_elapsed = elapsed
+                    # Save extra CSV
+                    csv_extra_buffer = io.BytesIO()
+                    df_csv_extra.to_csv(csv_extra_buffer, index=False)
+                    csv_extra_buffer.seek(0)
 
-                progress_bar.progress(100, text="Process Complete!")
-                time.sleep(0.3)
-                progress_bar.empty()
+                    st.session_state.field_result_buffer = output_buffer
+                    st.session_state.field_result_filename = generated_fn
+                    st.session_state.field_result_processed = True
+                    st.session_state.field_result_extra_csv = csv_extra_buffer
+                    elapsed = time.time() - start_time
+                    st.session_state.field_result_elapsed = elapsed
 
-                st.success(f"✅ Extraction and formatting (mm/dd/yyyy) successful! (Elapsed: {elapsed:.2f}s)")
-                play_completion_sound()
+                    progress_bar.progress(100, text="Process Complete!")
+                    time.sleep(0.3)
+                    progress_bar.empty()
 
-                preview_df = df_target.copy()
-                preview_df.columns = preview_df.iloc[0]
-                preview_df = preview_df.drop(preview_df.index[0]).reset_index(drop=True)
-                st.divider()
-                st.subheader("📋 Extracted Data Preview")
-                st.dataframe(preview_df.head(15))
+                    st.success(f"✅ Extraction and formatting (mm/dd/yyyy) successful! (Elapsed: {elapsed:.2f}s)")
+                    play_completion_sound()
 
-        except Exception as e:
-            st.error(f"❌ Error processing file: {str(e)}")
-            st.session_state.field_result_processed = False
+                    # ---- PREVIEW TABLE REMOVED ----
 
-    if st.session_state.field_result_processed and st.session_state.field_result_buffer is not None:
+            except Exception as e:
+                st.error(f"❌ Error processing file: {str(e)}")
+                st.session_state.field_result_processed = False
+
+    if st.session_state.get('field_result_processed', False) and st.session_state.field_result_buffer is not None:
         st.download_button(
             label=f"📥 Download Extracted File ({st.session_state.field_result_filename})",
             data=st.session_state.field_result_buffer,
@@ -805,6 +829,15 @@ elif selected_tool == "Field Result":
             use_container_width=True,
             key="field_result_download"
         )
+        if st.session_state.get('field_result_extra_csv') is not None:
+            st.download_button(
+                label="📥 Download Ref Code & Field Name CSV (fieldman.csv)",
+                data=st.session_state.field_result_extra_csv,
+                file_name="fieldman.csv",   # fixed filename
+                mime="text/csv",
+                use_container_width=True,
+                key="field_result_extra_download"
+            )
 
 
 # ==========================================
