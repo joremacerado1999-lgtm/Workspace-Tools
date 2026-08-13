@@ -485,28 +485,28 @@ if selected_tool == "VRP Mapper":
 
         time.sleep(0.2)
 
-        # --- AMOUNT DUE & CMS ID ---
+        # ======================================================================
+        # --- AMOUNT DUE & CMS ID (with PIF HOME LOAN validation) ---
+        # ======================================================================
         progress_bar.progress(60, text="Calculating constants, amounts, and CMS IDs...")
-        is_pif_homeloan = False
-        if version == "OTS":
-            is_pif_homeloan = True
-        else:
-            bank_col = None
-            for col in df_src.columns:
-                col_clean = col.strip().upper().replace(" ", "").replace("_", "").replace("/", "")
-                if col_clean == 'BANK':
-                    bank_col = col
-                    break
-            if bank_col:
-                unique_banks = df_src[bank_col].astype(str).str.strip().str.upper().replace({'NAN': ''}).unique()
-                is_pif_homeloan = any('PIF HOMELOAN' in bank for bank in unique_banks)
+
+        # Find bank column (needed for validation and later filename)
+        bank_col = None
+        for col in df_src.columns:
+            col_clean = col.strip().upper().replace(" ", "").replace("_", "").replace("/", "")
+            if col_clean == 'BANK':
+                bank_col = col
+                break
 
         if 'ch_code' in matched_cols:
             ch_codes = df_out['ch_code'].astype(str).str.strip().str.upper()
             df_out['amount_due'] = ch_codes.map(amounts_due_mapping).fillna('0')
             df_out['cms_id'] = ch_codes.map(cms_mapping).fillna('')
-            if is_pif_homeloan:
-                blank_cms_mask = df_out['cms_id'] == ''
+
+            # ---- NEW VALIDATION: only for MC2 / OTS and only for PIF HOME LOAN rows ----
+            if version in ['MC2', 'OTS'] and bank_col is not None:
+                is_pif = df_src[bank_col].astype(str).str.strip().str.upper().str.contains('PIF HOMELOAN', na=False)
+                blank_cms_mask = (df_out['cms_id'] == '') & is_pif
                 if blank_cms_mask.any():
                     missing_ch_codes = sorted(set(df_out.loc[blank_cms_mask, 'ch_code'].astype(str).str.strip()))
                     progress_bar.empty()
@@ -517,6 +517,8 @@ if selected_tool == "VRP Mapper":
                         f"Please update your 'cmd_id.xlsx' reference file and try again."
                     )
                     st.stop()
+            # -------------------------------------------------------------------------
+
         else:
             df_out['amount_due'] = '0'
             df_out['cms_id'] = ''
@@ -585,12 +587,7 @@ if selected_tool == "VRP Mapper":
         progress_bar.progress(95, text="Generating final files...")
         total_accounts = len(df_out)
         if version == "MC2":
-            bank_col = None
-            for col in df_src.columns:
-                col_clean = col.strip().upper().replace(" ", "").replace("_", "").replace("/", "")
-                if col_clean == 'BANK':
-                    bank_col = col
-                    break
+            # Reuse bank_col found above (if still needed)
             if bank_col:
                 unique_banks = df_src[bank_col].astype(str).str.strip().str.upper().replace({'NAN': ''}).unique()
                 unique_banks = [b for b in unique_banks if b]
